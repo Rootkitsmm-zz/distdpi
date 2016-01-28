@@ -25,8 +25,8 @@ class FlowTable {
         uint8_t  ipproto;
     };
 
-    struct ConnValue {
-        ConnValue(ConnKey *key)
+    struct ConnInfo {
+        ConnInfo(ConnKey *key)
         : key(*key),
           connid(0),
           packetnum(0) {}
@@ -66,14 +66,17 @@ class FlowTable {
         }
     };
 
-    std::unordered_map<ConnKey, ConnValue, ConnKeyHasher, ConnKeyEqual> conn_table;
+    std::unordered_map<ConnKey, ConnInfo, ConnKeyHasher, ConnKeyEqual> conn_table;
 
     FlowTable(PacketHandler *hdl);
     ~FlowTable();
-    void start();
     void PacketConsumer();
 
   private:
+    void classifyFlows(std::string&);
+
+    void populateFlowTable(const u_char*, u_int, ConnKey*);
+
     PacketHandler *pkthdl;
 };
 
