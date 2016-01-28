@@ -3,7 +3,7 @@ PROGRAM = distdpi
 
 INCLUDEDIRS = \
 	-Iinclude/ \
-	-Llib/
+	-L../distdpibk2/distdpi/lib/
 
 LIBS =-lpthread 
 
@@ -11,6 +11,7 @@ LIBS =-lpthread
 
 CXXSOURCES = \
              ./PacketHandler.cpp \
+             ./FlowTable.cpp \
              ./Main.cpp
 
 CXXOBJECTS = $(CXXSOURCES:.cpp=.o)  # expands to list of object files

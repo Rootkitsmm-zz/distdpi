@@ -1,11 +1,12 @@
-#include<string.h>
-#include<getopt.h>
-#include<thread>
-#include<iostream>
-#include<syslog.h>
+#include <string.h>
+#include <getopt.h>
+#include <thread>
+#include <iostream>
+#include <syslog.h>
+#include <vector>
 
-#include<PacketHandler.h>
-#include<FlowTable.h>
+#include <PacketHandler.h>
+#include <FlowTable.h>
 
 using namespace distdpi;
 
@@ -35,10 +36,17 @@ int main(int argc, char* argv[]) {
    } 
 
    PacketHandler pkthdl(std::move(options));
+   FlowTable ftb(&pkthdl);
 
-  // Start HTTPServer mainloop in a separate thread
-   std::thread t(&PacketHandler::start, &pkthdl);
+   std::vector<std::thread> th;
+   th.push_back(std::thread(&PacketHandler::start, &pkthdl));
+   th.push_back(std::thread(&FlowTable::PacketConsumer, &ftb));
+ 
+    th[0].join();
+    th[1].join();
+    // Start HTTPServer mainloop in a separate thread
+    //std::thread t(&PacketHandler::start, &pkthdl);
 
-   t.join();
-   return 0;
+    //t.join();
+    return 0;
 }

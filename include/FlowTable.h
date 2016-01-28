@@ -3,9 +3,11 @@
 
 #include <unordered_map>
 
+#include "PacketHandler.h"
+
 namespace distdpi {
 
-class Flowtable {
+class FlowTable {
   public:
 
     struct ConnKey {
@@ -65,6 +67,14 @@ class Flowtable {
     };
 
     std::unordered_map<ConnKey, ConnValue, ConnKeyHasher, ConnKeyEqual> conn_table;
+
+    FlowTable(PacketHandler *hdl);
+    ~FlowTable();
+    void start();
+    void PacketConsumer();
+
+  private:
+    PacketHandler *pkthdl;
 };
 
 }

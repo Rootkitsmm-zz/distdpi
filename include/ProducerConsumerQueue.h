@@ -1,14 +1,14 @@
 #ifndef PRODUCER_CONSUMER_QUEUE_H_
 #define PRODUCER_CONSUMER_QUEUE_H_
 
-#include <atomic>
+#include <cstdatomic>
 #include <cassert>
 #include <cstdlib>
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
 
-namespace folly {
+namespace distdpi {
 
 /*
  * ProducerConsumerQueue is a one producer and one consumer queue
@@ -21,6 +21,9 @@ struct ProducerConsumerQueue {
   ProducerConsumerQueue(const ProducerConsumerQueue&) = delete;
   ProducerConsumerQueue& operator = (const ProducerConsumerQueue&) = delete;
 
+  //ProducerConsumerQueue(const ProducerConsumerQueue<T> &pc)
+    //: size_(pc.size_), records_(pc.records), readIndex_(pc.readIndex), writeIndex_(pc.writeIndex){
+  //}
   // size must be >= 2.
   //
   // Also, note that the number of usable slots in the queue at any
@@ -42,7 +45,7 @@ struct ProducerConsumerQueue {
     // We need to destruct anything that may still exist in our queue.
     // (No real synchronization needed at destructor time: only one
     // thread can be doing this.)
-    if (!std::is_trivially_destructible<T>::value) {
+    //if (!std::is_trivially_destructible<T>::value) {
       size_t read = readIndex_;
       size_t end = writeIndex_;
       while (read != end) {
@@ -51,7 +54,7 @@ struct ProducerConsumerQueue {
           read = 0;
         }
       }
-    }
+    //}
 
     std::free(records_);
   }
@@ -97,7 +100,7 @@ struct ProducerConsumerQueue {
     auto const currentRead = readIndex_.load(std::memory_order_relaxed);
     if (currentRead == writeIndex_.load(std::memory_order_acquire)) {
       // queue is empty
-      return nullptr;
+      return NULL;
     }
     return &records_[currentRead];
   }
