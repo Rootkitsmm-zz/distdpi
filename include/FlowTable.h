@@ -2,6 +2,7 @@
 #define FLOWTABLE_H
 
 #include <unordered_map>
+#include <list>
 
 #include "PacketHandler.h"
 
@@ -34,6 +35,7 @@ class FlowTable {
         ConnKey key;
         uint64_t connid;
         uint32_t packetnum;
+        std::list<std::string> pktdata;
     }; 
 
     struct ConnKeyHasher {
@@ -76,6 +78,8 @@ class FlowTable {
     void classifyFlows(std::string&);
 
     void populateFlowTable(const u_char*, u_int, ConnKey*);
+
+    void printFlowTable(int signal);
 
     PacketHandler *pkthdl;
 };

@@ -18,6 +18,7 @@
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
 #include <netinet/udp.h>
+#include <signal.h>
 
 #include <FlowTable.h>
 
@@ -36,6 +37,10 @@ namespace distdpi {
 
 FlowTable::FlowTable(PacketHandler *hdl):
     pkthdl(hdl) {
+    struct sigaction sigAct;
+    memset(&sigAct, 0, sizeof(sigAct));
+    sigAct.sa_handler = (void *)&FlowTable::printFlowTable;
+    sigaction(SIGTERM, &sigAct, 0);
 }
 
 void FlowTable::PacketConsumer() {
@@ -44,9 +49,20 @@ void FlowTable::PacketConsumer() {
         while(!pkthdl->queue_.read(pkt)) {
             continue;
         }
-        std::cout << "Consumer got packet " << pkt << std::endl;
+        //std::cout << "Consumer got packet " << pkt << std::endl;
         this->classifyFlows(pkt);
     } 
+}
+
+void FlowTable::printFlowTable(int signal) {
+    cout << "Printing flow table " << conn_table.size() << endl;
+    if (conn_table.size() != 0) {
+    for (auto it = conn_table.begin(); it != conn_table.end(); ++it)
+    {
+        std::cout << " " << it->first.srcaddr << " : " << it->first.dstaddr << " : " 
+        << it->first.srcport << " : " << it->first.dstport << std::endl;
+    }
+    }
 }
 
 void FlowTable::classifyFlows(std::string &packet) {
@@ -110,7 +126,6 @@ void FlowTable::classifyFlows(std::string &packet) {
     len -= (iph->ihl << 2);
     ptr = reinterpret_cast<const u_char *>(iph) + (iph->ihl << 2);
 #endif
-
     populateFlowTable(ptr, len, &key); 
 }
 
@@ -148,11 +163,19 @@ void FlowTable::populateFlowTable(const u_char *ptr,  u_int len, ConnKey *key) {
         break;
     };
 
+    std::cout << "Packet found" << key->srcaddr << ":" << key->dstaddr << ":" << key->ipproto << std::endl;
     auto it = conn_table.find(*key);
     if (it == conn_table.end())
     {
         conn_table.insert(std::make_pair(*key, ConnInfo(key)));
     }
+
+    for (auto it = conn_table.begin(); it != conn_table.end(); ++it)
+    {
+        std::cout << " Flow table entry " << it->first.srcaddr << " : " << it->first.dstaddr << " : "
+        << it->first.srcport << " : " << it->first.dstport << std::endl;
+    }
+
 }
 
 FlowTable::~FlowTable() {

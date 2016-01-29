@@ -30,9 +30,9 @@ protected:
             if (request.empty())
                 break;
             pktcb((uint8_t *) request.c_str(), request.size());
-            bool success = send_response(client,request);
-            if (not success)
-                break;
+            //bool success = send_response(client,request);
+            //if (not success)
+            //    break;
         }
         close(client);
     }
@@ -52,7 +52,7 @@ protected:
     string get_request(int client) {
         string request = "";
         // read until we get a newline
-        while (request.find("\n") == string::npos) {
+        while (request.find("xBADA55") == string::npos) {
             int nread = recv(client,buf_,1024,0);
             if (nread < 0) {
                 if (errno == EINTR)
@@ -67,6 +67,7 @@ protected:
             }
             // be sure to use append in case we have binary data
             request.append(buf_,nread);
+            std::cout << " ----- " << buf_ << std::endl;
         }
         // a better server would cut off anything after the newline and
         // save it in a cache

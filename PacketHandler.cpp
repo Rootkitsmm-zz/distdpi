@@ -32,7 +32,6 @@ PacketHandler::PacketHandler(PacketHandlerOptions options):
 }
 
 void PacketHandler::PacketProducer(uint8_t *pkt, uint32_t len) {
-    std::cout << "Got pkt of len " << len << std::endl;
     std::string packet;
     packet.assign((char*)pkt, len);
     while(!queue_.write(packet)) {
