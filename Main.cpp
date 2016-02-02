@@ -7,6 +7,7 @@
 
 #include <PacketHandler.h>
 #include <FlowTable.h>
+#include <DPIEngine.h>
 
 using namespace distdpi;
 
@@ -35,12 +36,15 @@ int main(int argc, char* argv[]) {
       }
    } 
 
-   PacketHandler pkthdl(std::move(options));
-   FlowTable ftb(&pkthdl);
+   //FlowTable ftb;
+   std::shared_ptr<FlowTable> ftb = std::make_shared<FlowTable> ();
+   PacketHandler pkthdl(std::move(options),
+                        (ftb));
+   DPIEngine dpi((ftb));
 
    std::vector<std::thread> th;
    th.push_back(std::thread(&PacketHandler::start, &pkthdl));
-   th.push_back(std::thread(&FlowTable::PacketConsumer, &ftb));
+   th.push_back(std::thread(&DPIEngine::Dequeue, &dpi));
  
     th[0].join();
     th[1].join();

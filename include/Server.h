@@ -67,7 +67,7 @@ protected:
             }
             // be sure to use append in case we have binary data
             request.append(buf_,nread);
-            std::cout << " ----- " << buf_ << std::endl;
+            //std::cout << " ----- " << buf_ << std::endl;
         }
         // a better server would cut off anything after the newline and
         // save it in a cache
