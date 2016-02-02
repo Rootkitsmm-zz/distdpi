@@ -4,11 +4,12 @@
 #include <arpa/inet.h>
 #include <stdlib.h>
 #include <unistd.h>
-
+#include <functional>
 #include <navl.h>
 #include <DPIEngine.h>
 
 void bind_navl_externals();
+void* ptrForCb;
 
 using namespace std::placeholders;
 
@@ -16,11 +17,10 @@ namespace distdpi {
 
 navl_handle_t g_navl;
 
-DPIEngine::DPIEngine(std::shared_ptr<FlowTable> ftbl):
-    ftbl_(ftbl) {
+DPIEngine::DPIEngine(std::shared_ptr<FlowTable> ftbl,
+                     int numthreads):
+    num_of_dpi_threads(numthreads), ftbl_(ftbl) {
     ptrForCb = (void *) this;
-    //callback = std::bind(&DPIEngine::navl_classify_callback, this, _1, _2,
-    //_3, _4, _5, _6);
 }
 
 static const char *
@@ -42,11 +42,11 @@ get_state_string(navl_state_t state)
 int
 DPIEngine::navl_classify_callback(navl_handle_t handle, navl_result_t result, navl_state_t state, navl_conn_t nc, void *arg, int error)
 {
-    std::cout << "AIEEEYOOOOOOOOOOOOOOOOOOOOOOOOOOOO" <<  std::endl;
     DPIEngine *ptr = (DPIEngine *) ptrForCb;
     FlowTable::ConnInfo *info = static_cast<FlowTable::ConnInfo *>(arg);
-        static char name[9];
-    //info->error = error;
+    static char name[9];
+    
+    info->error = error;
 
     // save the classification state
     info->class_state = state;
@@ -66,20 +66,6 @@ DPIEngine::navl_classify_callback(navl_handle_t handle, navl_result_t result, na
         , info->dpi_confidence);
 
 #if 0
-    // save any error
-    info->error = error;
-
-    // save the classification state
-    info->class_state = state;
-
-    // fetch the result
-    info->dpi_result = navl_app_get(g_navl, result, &info->dpi_confidence);
-
-    // if we've just classified the connection, record what data packet (sum)
-    // the event occur on
-    if (!info->classified_num && state == NAVL_STATE_CLASSIFIED)
-        info->classified_num = info->initiator_total_packets + info->recipient_total_packets;
-
     // Remove connections for terminated flows
     if (state == NAVL_STATE_TERMINATED)
     {
@@ -105,10 +91,10 @@ void DPIEngine::Dequeue() {
         fprintf(stderr, "navl_init failed\n");
 
     for (;;) {
-        while (!ftbl_->ftbl_queue_.empty())
-        {
-            FlowTable::ConnMetadata m = ftbl_->ftbl_queue_.front();
-            ftbl_->ftbl_queue_.pop();
+        //while (!ftbl_->ftbl_queue_.empty())
+        //{
+            FlowTable::ConnMetadata m = ftbl_->ftbl_queue_list_[0]->pop();
+            //ftbl_->ftbl_queue_list_.pop();
  
             std::cout << "g_navl " << g_navlhandle_ << " Src add " << m.key->srcaddr << " Dst addr " << m.key->dstaddr << " src port " <<
             m.key->srcport << " dst port " << m.key->dstport << " ip proto " << m.key->ipproto << " packet num " << m.info->packetnum << 
@@ -134,8 +120,18 @@ void DPIEngine::Dequeue() {
                 }
             }
 
-        }
+        //}
     }
+}
+
+void DPIEngine::start() {
+    std::vector<std::thread> dpithreads;
+    printf("\n AIEEEEEEEEEEEEEEE %p ", &(ftbl_->ftbl_queue_list_[0]));
+    for (int i = 0; i < num_of_dpi_threads; i++)
+        dpithreads.push_back(std::thread(&DPIEngine::Dequeue, this));
+
+    for (int i = 0; i < num_of_dpi_threads; i++)
+        dpithreads[i].join();
 }
 
 DPIEngine::~DPIEngine() {

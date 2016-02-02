@@ -19,6 +19,7 @@
 #include <netinet/tcp.h>
 #include <netinet/udp.h>
 #include <signal.h>
+#include <memory>
 
 #include <FlowTable.h>
 
@@ -35,7 +36,10 @@
 
 namespace distdpi {
 
-FlowTable::FlowTable() {
+FlowTable::FlowTable(int numOfQueues) {
+    for (int i = 0; i < numOfQueues; i++)
+        ftbl_queue_list_.push_back(std::unique_ptr<Queue<ConnMetadata>>(new Queue<ConnMetadata>()));
+    printf ("\n Pointer to first queue %p ", &ftbl_queue_list_[0]);
     struct sigaction sigAct;
     memset(&sigAct, 0, sizeof(sigAct));
     sigAct.sa_handler = (void *)&FlowTable::printFlowTable;

@@ -1,12 +1,15 @@
 #ifndef FLOWTABLE_H
 #define FLOWTABLE_H
 
+#include "Queue.h"
 #include "ProducerConsumerQueue.h"
 #include "navl.h"
 
 #include <unordered_map>
 #include <list>
+#include <vector>
 #include <queue>
+#include <memory>
 
 namespace distdpi {
 
@@ -47,32 +50,22 @@ class FlowTable {
         ConnKey key;
         uint64_t connid;
         uint32_t packetnum;
-        u_int   classified_num;             // packet number conn was classified on
-        navl_state_t class_state;           // classification state
+        u_int   classified_num;
+        navl_state_t class_state;
 
-        u_int   initiator_total_packets;    // total packets from initiator
-        u_int   recipient_total_packets;    // total packets from recipient
+        u_int   initiator_total_packets;
+        u_int   recipient_total_packets;
 
-        u_int   initiator_total_bytes;      // total bytes from initiator
-        u_int   recipient_total_bytes;      // total bytes from recipient
+        u_int   initiator_total_bytes;
+        u_int   recipient_total_bytes;
 
-        void    *dpi_state;                 // navl connection state handle
-        u_int   dpi_result;                 // results from classification
-        int     dpi_confidence;             // confidence level
-        int     error;                      // error code from classification
+        void    *dpi_state;
+        u_int   dpi_result;
+        int     dpi_confidence;
+        int     error;
     }; 
 
     struct ConnMetadata {
-/*
-        ConnMetadata(ConnKey *key,
-                     ConnInfo *info,
-                     std::string data,
-                     uint8_t dir)
-        : key(*key),
-          info(*info),
-          data(data),
-          dir(dir) {}
-*/
         ConnKey *key;
         ConnInfo *info;
         std::string data;
@@ -112,13 +105,13 @@ class FlowTable {
     typedef std::unordered_map<ConnKey, ConnInfo, ConnKeyHasher, ConnKeyEqual> unorderedmap;
     std::unordered_map<ConnKey, ConnInfo, ConnKeyHasher, ConnKeyEqual> conn_table;
 
-    std::queue<ConnMetadata> ftbl_queue_;
+    std::vector<std::unique_ptr<Queue<ConnMetadata>>> ftbl_queue_list_;
+    //std::queue<ConnMetadata> ftbl_queue_;
     
-    FlowTable();
+    FlowTable(int numOfQueues);
     ~FlowTable();
 
   private:
-
 
     void printFlowTable(int signal);
 };

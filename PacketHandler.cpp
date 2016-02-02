@@ -1,10 +1,8 @@
 #include <iostream>
 #include <string.h>
-#include <errno.h>       // errno
 #include <stdlib.h>      // NULL
 #include <stdio.h>       // FILE
 #include <unistd.h>      // close
-#include <stdarg.h>      // va_start(), ...
 #include <string.h>      // memcpy()
 #include <ctype.h>       // toupper()
 #include <getopt.h>      // getopt_long()
@@ -62,7 +60,6 @@ void PacketHandler::PacketConsumer() {
         while(!queue_.read(pkt)) {
             continue;
         }
-        //std::cout << "Consumer got packet " << pkt << std::endl;
         this->classifyFlows(pkt);
     } 
 }
@@ -184,7 +181,7 @@ void PacketHandler::populateFlowTable(const u_char *ptr,  u_int len, FlowTable::
         connmdata.key = &(it->first);
         connmdata.info = &(it->second);
         connmdata.data = pkt_string;
-        ftbl_->ftbl_queue_.push(connmdata);
+        ftbl_->ftbl_queue_list_[0]->push(connmdata);
     }
     else {
         it->second.packetnum++;
@@ -193,7 +190,7 @@ void PacketHandler::populateFlowTable(const u_char *ptr,  u_int len, FlowTable::
         connmdata.info = &(it->second);
         connmdata.data = pkt_string;
         connmdata.dir = dir;
-        ftbl_->ftbl_queue_.push(connmdata);
+        ftbl_->ftbl_queue_list_[0]->push(connmdata);
     }
 
     for (auto it = ftbl_->conn_table.begin(); it != ftbl_->conn_table.end(); ++it)

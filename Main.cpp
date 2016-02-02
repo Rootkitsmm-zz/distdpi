@@ -35,16 +35,17 @@ int main(int argc, char* argv[]) {
          return 1;
       }
    } 
+   int dpi_instances = 1;
 
    //FlowTable ftb;
-   std::shared_ptr<FlowTable> ftb = std::make_shared<FlowTable> ();
+   std::shared_ptr<FlowTable> ftb = std::make_shared<FlowTable> (dpi_instances);
    PacketHandler pkthdl(std::move(options),
                         (ftb));
-   DPIEngine dpi((ftb));
+   DPIEngine dpi((ftb), dpi_instances);
 
    std::vector<std::thread> th;
    th.push_back(std::thread(&PacketHandler::start, &pkthdl));
-   th.push_back(std::thread(&DPIEngine::Dequeue, &dpi));
+   th.push_back(std::thread(&DPIEngine::start, &dpi));
  
     th[0].join();
     th[1].join();
