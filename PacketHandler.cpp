@@ -36,6 +36,10 @@
 
 using namespace std::placeholders; 
 
+std::mutex m_mutex;
+std::condition_variable m_cv;
+bool notify = false;
+
 namespace distdpi {
 
 PacketHandler::PacketHandler(PacketHandlerOptions options,
@@ -52,14 +56,21 @@ void PacketHandler::PacketProducer(uint8_t *pkt, uint32_t len) {
     while(!queue_.write(packet)) {
         continue;
     }
+    notify = true;
+    m_cv.notify_one();
 }
 
 void PacketHandler::PacketConsumer() {
     for (;;) {
         std::string pkt;
+        std::unique_lock<std::mutex> lock(m_mutex);
+
+        while(!notify)
+            m_cv.wait(lock);
         while(!queue_.read(pkt)) {
             continue;
         }
+        notify = false;
         this->classifyFlows(pkt);
     } 
 }
@@ -162,11 +173,10 @@ void PacketHandler::populateFlowTable(const u_char *ptr,  u_int len, FlowTable::
         break;
     };
 
-    std::cout << "Packet found" << key->srcaddr << ":" << key->dstaddr << ":" << key->ipproto << std::endl;
-
     FlowTable::ConnMetadata connmdata;
     std::string pkt_string;
     pkt_string.append((char *)ptr, len);
+    int hash;
 
     auto it = ftbl_->conn_table.find(*key);
     if (it == ftbl_->conn_table.end())
@@ -181,7 +191,9 @@ void PacketHandler::populateFlowTable(const u_char *ptr,  u_int len, FlowTable::
         connmdata.key = &(it->first);
         connmdata.info = &(it->second);
         connmdata.data = pkt_string;
-        ftbl_->ftbl_queue_list_[0]->push(connmdata);
+        hash = ftbl_->conn_table.hash_function()(it->first) % ftbl_->numQueues_;
+        std::cout << "AIEEEEEEEEEEE hash " << hash << std::endl;
+        ftbl_->ftbl_queue_list_[hash]->push(connmdata);
     }
     else {
         it->second.packetnum++;
@@ -190,15 +202,9 @@ void PacketHandler::populateFlowTable(const u_char *ptr,  u_int len, FlowTable::
         connmdata.info = &(it->second);
         connmdata.data = pkt_string;
         connmdata.dir = dir;
-        ftbl_->ftbl_queue_list_[0]->push(connmdata);
+        hash = ftbl_->conn_table.hash_function()(it->first) % ftbl_->numQueues_;
+        ftbl_->ftbl_queue_list_[hash]->push(connmdata);
     }
-
-    for (auto it = ftbl_->conn_table.begin(); it != ftbl_->conn_table.end(); ++it)
-    {
-        //std::cout << " Flow table entry " << it->first.srcaddr << " : " << it->first.dstaddr << " : "
-        //<< it->first.srcport << " : " << it->first.dstport <<  std::endl;
-    }
-
 }
 
 void PacketHandler::start() {

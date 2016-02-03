@@ -36,7 +36,8 @@
 
 namespace distdpi {
 
-FlowTable::FlowTable(int numOfQueues) {
+FlowTable::FlowTable(int numOfQueues):
+    numQueues_(numOfQueues) {
     for (int i = 0; i < numOfQueues; i++)
         ftbl_queue_list_.push_back(std::unique_ptr<Queue<ConnMetadata>>(new Queue<ConnMetadata>()));
     printf ("\n Pointer to first queue %p ", &ftbl_queue_list_[0]);

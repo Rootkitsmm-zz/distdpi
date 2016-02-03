@@ -106,10 +106,10 @@ class FlowTable {
     std::unordered_map<ConnKey, ConnInfo, ConnKeyHasher, ConnKeyEqual> conn_table;
 
     std::vector<std::unique_ptr<Queue<ConnMetadata>>> ftbl_queue_list_;
-    //std::queue<ConnMetadata> ftbl_queue_;
     
     FlowTable(int numOfQueues);
     ~FlowTable();
+    int numQueues_;
 
   private:
 

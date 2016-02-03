@@ -35,7 +35,7 @@ int main(int argc, char* argv[]) {
          return 1;
       }
    } 
-   int dpi_instances = 1;
+   int dpi_instances = 4;
 
    //FlowTable ftb;
    std::shared_ptr<FlowTable> ftb = std::make_shared<FlowTable> (dpi_instances);

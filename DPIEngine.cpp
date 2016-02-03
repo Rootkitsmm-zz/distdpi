@@ -81,7 +81,7 @@ DPIEngine::navl_classify_callback(navl_handle_t handle, navl_result_t result, na
 #endif
 }
 
-void DPIEngine::Dequeue() {
+void DPIEngine::Dequeue(int queue) {
     bind_navl_externals();
 
     if((g_navlhandle_ = navl_open("plugins")) == 0)
@@ -93,14 +93,15 @@ void DPIEngine::Dequeue() {
     for (;;) {
         //while (!ftbl_->ftbl_queue_.empty())
         //{
-            FlowTable::ConnMetadata m = ftbl_->ftbl_queue_list_[0]->pop();
+            FlowTable::ConnMetadata m = ftbl_->ftbl_queue_list_[queue]->pop();
             //ftbl_->ftbl_queue_list_.pop();
+            std::cout << "DPI queue " << queue << " got packet " << std::endl;
  
-            std::cout << "g_navl " << g_navlhandle_ << " Src add " << m.key->srcaddr << " Dst addr " << m.key->dstaddr << " src port " <<
-            m.key->srcport << " dst port " << m.key->dstport << " ip proto " << m.key->ipproto << " packet num " << m.info->packetnum << 
-            " DPI state " << m.info->dpi_state << std::endl;
+            //std::cout << "g_navl " << g_navlhandle_ << " Src add " << m.key->srcaddr << " Dst addr " << m.key->dstaddr << " src port " <<
+            //m.key->srcport << " dst port " << m.key->dstport << " ip proto " << m.key->ipproto << " packet num " << m.info->packetnum << 
+            //" DPI state " << m.info->dpi_state << std::endl;
 
-            if (m.info->packetnum == 0) {
+            if (m.info->packetnum == 0 && !m.info->dpi_state) {
                 navl_host_t src_addr, dst_addr;
                 src_addr.family = NAVL_AF_INET;
                 src_addr.port = htons(m.key->srcport);
@@ -114,9 +115,11 @@ void DPIEngine::Dequeue() {
                 }
             }
             else {
-                if (navl_classify(g_navlhandle_, NAVL_ENCAP_NONE, m.data.c_str(), m.data.size(), m.info->dpi_state, m.dir, DPIEngine::navl_classify_callback, (void *)&m.info))
-                {
-                    std::cout << "Returning unable to dpi :P dir " << std::endl;
+                if (!m.info->error && m.data.size() && m.info->dpi_state) {
+                    if (navl_classify(g_navlhandle_, NAVL_ENCAP_NONE, m.data.c_str(), m.data.size(), m.info->dpi_state, m.dir, DPIEngine::navl_classify_callback, (void *)&m.info))
+                    {
+                        std::cout << "Returning unable to dpi :P dir " << std::endl;
+                    }
                 }
             }
 
@@ -126,9 +129,9 @@ void DPIEngine::Dequeue() {
 
 void DPIEngine::start() {
     std::vector<std::thread> dpithreads;
-    printf("\n AIEEEEEEEEEEEEEEE %p ", &(ftbl_->ftbl_queue_list_[0]));
+
     for (int i = 0; i < num_of_dpi_threads; i++)
-        dpithreads.push_back(std::thread(&DPIEngine::Dequeue, this));
+        dpithreads.push_back(std::thread(&DPIEngine::Dequeue, this, i));
 
     for (int i = 0; i < num_of_dpi_threads; i++)
         dpithreads[i].join();

@@ -21,14 +21,6 @@ struct ProducerConsumerQueue {
   ProducerConsumerQueue(const ProducerConsumerQueue&) = delete;
   ProducerConsumerQueue& operator = (const ProducerConsumerQueue&) = delete;
 
-  //ProducerConsumerQueue(const ProducerConsumerQueue<T> &pc)
-    //: size_(pc.size_), records_(pc.records), readIndex_(pc.readIndex), writeIndex_(pc.writeIndex){
-  //}
-  // size must be >= 2.
-  //
-  // Also, note that the number of usable slots in the queue at any
-  // given time is actually (size-1), so if you start with an empty queue,
-  // isFull() will return true after size-1 insertions.
   explicit ProducerConsumerQueue(uint32_t size)
     : size_(size)
     , records_(static_cast<T*>(std::malloc(sizeof(T) * size)))

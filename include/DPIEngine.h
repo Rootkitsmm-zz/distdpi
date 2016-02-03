@@ -14,7 +14,7 @@ class DPIEngine {
         DPIEngine(std::shared_ptr<FlowTable> ftbl,
                   int numthreads);
         ~DPIEngine();
-        void Dequeue();
+        void Dequeue(int queue);
         void start();
     
         static int
