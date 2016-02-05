@@ -15,12 +15,13 @@ public:
     }
 
     void run() {
-        create();
+        if (create() != 0)
+            return;
         serve();
     }
 
 protected:
-    virtual void create() = 0;
+    virtual int create() = 0;
     virtual void closeSocket() = 0;
     virtual void pktcb(uint8_t *pkt, uint32_t len) = 0;
 
@@ -29,7 +30,7 @@ protected:
             string request = get_request(client);
             if (request.empty())
                 break;
-            pktcb((uint8_t *) request.c_str(), request.size());
+            //pktcb((uint8_t *) request.c_str(), request.size());
             //bool success = send_response(client,request);
             //if (not success)
             //    break;
@@ -44,7 +45,7 @@ protected:
 
         while ((client = accept(server_,(struct sockaddr *)&client_addr,&clientlen)) > 0) {
 
-            handle(client);
+            handle(client);    
         }
         closeSocket();
     }

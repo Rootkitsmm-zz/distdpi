@@ -34,30 +34,22 @@ class FlowTable {
     struct ConnInfo {
         ConnInfo(ConnKey *key)
         : key(*key),
+          queue(0),
           connid(0),
           packetnum(0),
           classified_num(0),
           class_state(NAVL_STATE_INSPECTING),
-          initiator_total_packets(0),
-          recipient_total_packets(0),
-          initiator_total_bytes(0),
-          recipient_total_bytes(0),
-          dpi_state(0), dpi_result(0),
+          dpi_state(NULL), dpi_result(0),
           dpi_confidence(0),
           error(0) {}
 
 
         ConnKey key;
+        int queue;
         uint64_t connid;
         uint32_t packetnum;
         u_int   classified_num;
         navl_state_t class_state;
-
-        u_int   initiator_total_packets;
-        u_int   recipient_total_packets;
-
-        u_int   initiator_total_bytes;
-        u_int   recipient_total_bytes;
 
         void    *dpi_state;
         u_int   dpi_result;
@@ -68,13 +60,18 @@ class FlowTable {
     struct ConnMetadata {
         ConnKey *key;
         ConnInfo *info;
-        std::string data;
+        uint32_t pktnum;
         uint32_t dir;
+        std::string data;
     };
 
     struct ConnKeyHasher {
         size_t operator()(const ConnKey &key) const {
-            return key.srcaddr + key.dstaddr + key.srcport + key.dstport + key.ipproto;
+            return std::hash<uint32_t>() (key.srcaddr +
+                                          key.dstaddr +
+                                          key.srcport +
+                                          key.dstport +
+                                          key.ipproto);
         }
     };
 
@@ -109,11 +106,19 @@ class FlowTable {
     
     FlowTable(int numOfQueues);
     ~FlowTable();
+
+    void InsertOrUpdateFlows(ConnKey *key, std::string pkt_string);
+
+    void updateFlowTableDPIData(ConnInfo *info, 
+                                navl_handle_t handle, 
+                                navl_result_t result, 
+                                navl_state_t state, 
+                                navl_conn_t nc, 
+                                int error);
     int numQueues_;
 
   private:
-
-    void printFlowTable(int signal);
+    std::mutex ftbl_mutex;
 };
 
 }

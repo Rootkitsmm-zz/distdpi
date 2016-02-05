@@ -4,17 +4,19 @@ PROGRAM = distdpi
 INCLUDEDIRS = \
 	-Iinclude/ \
 	-L../distdpibk2/distdpi/lib/ \
-	-L../navl_4.3.0.36_linux-x86-64-release/flowaware/
+	-L../navl_4.3.1.29_linux-x86-64-release/lib/
 
 LIBS =-lpthread 
 
 #STD_LIBS =-lboost_serialization
 
 CXXSOURCES = \
+			 ./DistDpi.cpp \
              ./PacketHandler.cpp \
              ./FlowTable.cpp \
              ./DPIEngine.cpp \
 			 ./navl_externals_posix.c \
+			 ./netx_sample_service.c \
              ./Main.cpp
 
 CXXOBJECTS = $(CXXSOURCES:.cpp=.o)  # expands to list of object files

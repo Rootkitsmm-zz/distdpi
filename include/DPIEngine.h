@@ -24,10 +24,8 @@ class DPIEngine {
    
     private:
         int num_of_dpi_threads;
-
         std::shared_ptr<FlowTable> ftbl_;
-
-        navl_handle_t g_navlhandle_;
+//        navl_handle_t g_navlhandle_;
 };
 
 

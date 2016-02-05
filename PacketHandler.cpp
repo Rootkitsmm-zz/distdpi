@@ -17,11 +17,14 @@
 #include <netinet/tcp.h>
 #include <netinet/udp.h>
 #include <vector>
+#include <type_traits>
+#include <utility>
 
 #include <ProducerConsumerQueue.h>
 #include <PacketHandler.h>
 #include <Timer.h>
 #include <UnixServer.h>
+#include <netx_service.h>
 
 #ifdef FREEBSD
 #include <sys/socket.h>
@@ -42,12 +45,13 @@ bool notify = false;
 
 namespace distdpi {
 
-PacketHandler::PacketHandler(PacketHandlerOptions options,
+PacketHandler::PacketHandler(std::string AgentName,
                              std::shared_ptr<FlowTable> ftbl):
     Timer(5.0),
+    /*SignalHandler(),*/
     ftbl_(ftbl),
-    queue_(1000) {
-    options_ = (std::make_shared<PacketHandlerOptions>(std::move(options)));
+    queue_(10000),
+    AgentName_(AgentName) {
 }
 
 void PacketHandler::PacketProducer(uint8_t *pkt, uint32_t len) {
@@ -58,6 +62,10 @@ void PacketHandler::PacketProducer(uint8_t *pkt, uint32_t len) {
     }
     notify = true;
     m_cv.notify_one();
+}
+
+void PacketHandler::StaticPacketProducer(void *obj, uint8_t *pkt, uint32_t len) {
+    ((PacketHandler *)obj)->PacketProducer(pkt, len);
 }
 
 void PacketHandler::PacketConsumer() {
@@ -176,52 +184,28 @@ void PacketHandler::populateFlowTable(const u_char *ptr,  u_int len, FlowTable::
     FlowTable::ConnMetadata connmdata;
     std::string pkt_string;
     pkt_string.append((char *)ptr, len);
-    int hash;
 
-    auto it = ftbl_->conn_table.find(*key);
-    if (it == ftbl_->conn_table.end())
-    {
-        std::pair<FlowTable::unorderedmap::iterator,bool> ret;
-        ret = ftbl_->conn_table.insert(std::make_pair(*key, FlowTable::ConnInfo(key)));
-        if (ret.second == false) {
-            std::cout << "flow insert failed " << std::endl;
-        }
-        it = ret.first;
-        it->second.packetnum = 0;
-        connmdata.key = &(it->first);
-        connmdata.info = &(it->second);
-        connmdata.data = pkt_string;
-        hash = ftbl_->conn_table.hash_function()(it->first) % ftbl_->numQueues_;
-        std::cout << "AIEEEEEEEEEEE hash " << hash << std::endl;
-        ftbl_->ftbl_queue_list_[hash]->push(connmdata);
-    }
-    else {
-        it->second.packetnum++;
-        int dir = key->srcaddr == it->first.srcaddr ? 0 : 1;
-        connmdata.key = &(it->first);
-        connmdata.info = &(it->second);
-        connmdata.data = pkt_string;
-        connmdata.dir = dir;
-        hash = ftbl_->conn_table.hash_function()(it->first) % ftbl_->numQueues_;
-        ftbl_->ftbl_queue_list_[hash]->push(connmdata);
-    }
+    ftbl_->InsertOrUpdateFlows(key, pkt_string);
+}
+
+void PacketHandler::ConnectToPktProducer() {
+    start_netx_service(AgentName_.c_str(), PacketHandler::StaticPacketProducer, this);
 }
 
 void PacketHandler::start() {
-    std::vector<std::thread> th;
-    std::function<void(uint8_t*, uint32_t)> callback;
-
-    callback = std::bind(&PacketHandler::PacketProducer, this, _1, _2);
- 
-    UnixServer server;
-    server.registerPacketCb(callback);
-    th.push_back(std::thread(&UnixServer::run, &server));
-    th.push_back(std::thread(&PacketHandler::PacketConsumer, this));
-
-    th[0].join();
-    th[1].join();
+    //signals.push_back(SIGTERM);
+    //this->install(this, signals);
+    pkthdl_threads.push_back(std::thread(&PacketHandler::ConnectToPktProducer, this));
+    pkthdl_threads.push_back(std::thread(&PacketHandler::PacketConsumer, this));
 }
-
+/*
+void PacketHandler::stop() {
+    for (int i = 0; i < pkthdl_threads.size(); i++) {
+        pkthdl_threads[i].join();
+    }
+    std::cout << " PacketHandler stop called " << std::endl;    
+}
+*/
 void PacketHandler::executeCb() {
     std::cout << "Timer called " << std::endl;
 }

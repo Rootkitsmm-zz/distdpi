@@ -13,7 +13,7 @@ class UnixServer : public Server {
 public:
 
     UnixServer() {
-        socketName = "/tmp/unix-socket";
+        socketName = "/tmp/unix-socket1";
     }
     ~UnixServer() {}
 
@@ -31,35 +31,45 @@ protected:
         packetCallback_(pkt, len);
     }
 
-    void create() {
+    int create() {
         struct sockaddr_un server_addr;
-
+        int len;
         // setup socket address structure
         bzero(&server_addr,sizeof(server_addr));
         server_addr.sun_family = AF_UNIX;
         strncpy(server_addr.sun_path,socketName,sizeof(server_addr.sun_path) - 1);
+        unlink(server_addr.sun_path);
 
+        len = strlen(server_addr.sun_path) + sizeof(server_addr.sun_family);
         // create socket
-        server_ = socket(PF_UNIX,SOCK_STREAM,0);
-        if (!server_) {
+        server_ = socket(AF_UNIX,SOCK_STREAM,0);
+        if (server_ == -1) {
+            std::cout << " Could not open socket " << std::endl;
             perror("socket");
-            exit(-1);
+            return -1;
         }
+        std::cout << "Socket fd returned " << server_ << std::endl;
 
         // call bind to associate the socket with the UNIX file system
-        if (::bind(server_,(const struct sockaddr *)&server_addr,sizeof(server_addr)) < 0) {
+        if (::bind(server_,(const struct sockaddr *)&server_addr,len) < 0) {
+            std::cout << " bind failed ====== " << std::endl;
             perror("bind");
-            exit(-1);
+            return -1;
         }
 
         // convert the socket to listen for incoming connections
-        if (listen(server_,SOMAXCONN) < 0) {
+        if (listen(server_,5) < 0) {
+            std::cout << " Listen Failed " << std::endl;
             perror("listen");
-            exit(-1);
+            return -1;
         }
+        std::cout << "Listening on the unix socket " << std::endl;
+        return 0;
     }
 
     void closeSocket() {
+         close(server_);
+         server_ = -1;
          unlink(socketName);
     }
 

@@ -9,13 +9,13 @@
 #include <DPIEngine.h>
 
 void bind_navl_externals();
-void* ptrForCb;
 
 using namespace std::placeholders;
 
-namespace distdpi {
+std::mutex dpiengine_lock;
+void *ptrForCb = NULL;
 
-navl_handle_t g_navl;
+namespace distdpi {
 
 DPIEngine::DPIEngine(std::shared_ptr<FlowTable> ftbl,
                      int numthreads):
@@ -23,66 +23,19 @@ DPIEngine::DPIEngine(std::shared_ptr<FlowTable> ftbl,
     ptrForCb = (void *) this;
 }
 
-static const char *
-get_state_string(navl_state_t state)
-{
-    switch (state)
-    {
-    case NAVL_STATE_INSPECTING:
-        return "INSPECTING";
-    case NAVL_STATE_CLASSIFIED:
-        return "CLASSIFIED";
-    case NAVL_STATE_TERMINATED:
-        return "TERMINATED";
-    default:
-        return "UNKNOWN";
-    }
-}
-
 int
 DPIEngine::navl_classify_callback(navl_handle_t handle, navl_result_t result, navl_state_t state, navl_conn_t nc, void *arg, int error)
 {
-    DPIEngine *ptr = (DPIEngine *) ptrForCb;
+    dpiengine_lock.lock(); 
     FlowTable::ConnInfo *info = static_cast<FlowTable::ConnInfo *>(arg);
-    static char name[9];
-    
-    info->error = error;
-
-    // save the classification state
-    info->class_state = state;
-
-    // fetch the result
-    info->dpi_result = navl_app_get(ptr->g_navlhandle_, result, &info->dpi_confidence);
-
-    // if we've just classified the connection, record what data packet (sum)
-    // the event occur on
-    if (!info->classified_num && state == NAVL_STATE_CLASSIFIED)
-        info->classified_num = info->initiator_total_packets + info->recipient_total_packets;
-
-    printf("    Classification: %s %s after %u packets %u%% confidence\n", info->dpi_result ? navl_proto_get_name(ptr->g_navlhandle_, info->dpi_result, name, sizeof(name)) : "UNKNOWN"
-        , get_state_string(info->class_state)
-        , info->classified_num
-            ? info->classified_num : (info->initiator_total_packets + info->recipient_total_packets)
-        , info->dpi_confidence);
-
-#if 0
-    // Remove connections for terminated flows
-    if (state == NAVL_STATE_TERMINATED)
-    {
-        conn_table::iterator it = g_conn_table.find(info->key);
-        if (it != g_conn_table.end())
-        {
-            display_conn(&it->first, &it->second);
-            g_conn_table.erase(it);
-        }
-    }
-
+    ((DPIEngine *)ptrForCb)->ftbl_->updateFlowTableDPIData(info, handle, result, state, nc, error);
+    dpiengine_lock.unlock();
     return 0;
-#endif
 }
 
 void DPIEngine::Dequeue(int queue) {
     bind_navl_externals();
+    navl_handle_t g_navlhandle_;
 
     if((g_navlhandle_ = navl_open("plugins")) == 0)
         fprintf(stderr, "navl_open failed\n");
@@ -92,34 +45,36 @@ void DPIEngine::Dequeue(int queue) {
 
     for (;;) {
         FlowTable::ConnMetadata m = ftbl_->ftbl_queue_list_[queue]->pop();
-        std::cout << "DPI queue " << queue << " got packet " << std::endl;
- 
-            //std::cout << "g_navl " << g_navlhandle_ << " Src add " << m.key->srcaddr << " Dst addr " << m.key->dstaddr << " src port " <<
-            //m.key->srcport << " dst port " << m.key->dstport << " ip proto " << m.key->ipproto << " packet num " << m.info->packetnum << 
-            //" DPI state " << m.info->dpi_state << std::endl;
-
-        if (m.info->packetnum == 0 && !m.info->dpi_state) {
+        FlowTable::ConnKey *key = m.key;
+        FlowTable::ConnInfo *info = m.info;
+        //std::cout << "g_navl " << g_navlhandle_ << " Src add " << key->srcaddr << " Dst addr " << key->dstaddr << " src port " <<
+        //key->srcport << " dst port " << key->dstport << " ip proto " << key->ipproto << " packet num " << m.pktnum << 
+        //" DPI state " << std::endl;
+        if (info->dpi_state == NULL) {
             navl_host_t src_addr, dst_addr;
             src_addr.family = NAVL_AF_INET;
-            src_addr.port = htons(m.key->srcport);
-            src_addr.in4_addr = htonl(m.key->srcaddr);
+            src_addr.port = htons(key->srcport);
+            src_addr.in4_addr = htonl(key->srcaddr);
             dst_addr.family = NAVL_AF_INET;
-            dst_addr.port = htons(m.key->dstport);
-            dst_addr.in4_addr = htonl(m.key->dstaddr);
-            if (navl_conn_create(g_navlhandle_, &src_addr, &dst_addr, m.key->ipproto, &(m.info->dpi_state)) != 0) {
+            dst_addr.port = htons(key->dstport);
+            dst_addr.in4_addr = htonl(key->dstaddr);
+            if (navl_conn_create(g_navlhandle_, &src_addr, &dst_addr, key->ipproto, &(info->dpi_state)) != 0) {
                 std::cout << "Returning -----------" << std::endl; 
                 continue;
             }
         }
         else {
-            if (!m.info->error && m.data.size() && m.info->dpi_state) {
-                if (navl_classify(g_navlhandle_, NAVL_ENCAP_NONE, m.data.c_str(), m.data.size(), m.info->dpi_state, m.dir, DPIEngine::navl_classify_callback, (void *)&m.info))
+            if(info->dpi_state != NULL) {
+            if (!info->error && m.data.size() && info->dpi_state) {
+                if (navl_classify(g_navlhandle_, NAVL_ENCAP_NONE, m.data.c_str(), m.data.size(), info->dpi_state, m.dir, DPIEngine::navl_classify_callback, (void *)info))
                 {
                     std::cout << "Returning unable to dpi :P dir " << std::endl;
                 }
             }
+            }
         }
     }
+    std::cout << " Exiting thread for queue " << queue << std::endl;
 }
 
 void DPIEngine::start() {
