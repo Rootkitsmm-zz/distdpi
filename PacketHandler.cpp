@@ -19,6 +19,7 @@
 #include <vector>
 #include <type_traits>
 #include <utility>
+#include <csignal>
 
 #include <ProducerConsumerQueue.h>
 #include <PacketHandler.h>
@@ -48,7 +49,6 @@ namespace distdpi {
 PacketHandler::PacketHandler(std::string AgentName,
                              std::shared_ptr<FlowTable> ftbl):
     Timer(5.0),
-    /*SignalHandler(),*/
     ftbl_(ftbl),
     queue_(10000),
     AgentName_(AgentName) {
@@ -207,6 +207,7 @@ void PacketHandler::stop() {
     running_ = false;
     notify = true;
     m_cv.notify_one();
+    stop_netx_service();
     for (int i = 0; i < pkthdl_threads.size(); i++) {
         pkthdl_threads[i].join();
     }
@@ -218,7 +219,7 @@ void PacketHandler::executeCb() {
 }
 
 PacketHandler::~PacketHandler() {
-    std::cout << " 1 Calling destructor" << std::endl;
+    std::cout << "Calling PacketHandler Destructor" << std::endl;
 }
 
 } 

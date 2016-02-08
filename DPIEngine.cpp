@@ -49,6 +49,8 @@ void DPIEngine::Dequeue(int queue) {
 
     for (;;) {
         FlowTable::ConnMetadata m = ftbl_->ftbl_queue_list_[queue]->pop();
+        if (m.exit_flag)
+            break;
         FlowTable::ConnKey *key = m.key;
         FlowTable::ConnInfo *info = m.info;
         //std::cout << "g_navl " << g_navlhandle_ << " Src add " << key->srcaddr << " Dst addr " << key->dstaddr << " src port " <<
@@ -63,7 +65,6 @@ void DPIEngine::Dequeue(int queue) {
             dst_addr.port = htons(key->dstport);
             dst_addr.in4_addr = htonl(key->dstaddr);
             if (navl_conn_create(g_navlhandle_, &src_addr, &dst_addr, key->ipproto, &(info->dpi_state)) != 0) {
-                std::cout << "Returning -----------" << std::endl; 
                 continue;
             }
         }
@@ -71,7 +72,7 @@ void DPIEngine::Dequeue(int queue) {
             if (!info->error && m.data.size() && info->dpi_state && info->class_state != NAVL_STATE_CLASSIFIED) {
                 if (navl_classify(g_navlhandle_, NAVL_ENCAP_NONE, m.data.c_str(), m.data.size(), info->dpi_state, m.dir, DPIEngine::navl_classify_callback, (void *)info))
                 {
-                    std::cout << "Returning unable to dpi :P dir " << std::endl;
+                    continue;
                 }
             }
         }
@@ -93,7 +94,7 @@ void DPIEngine::stop () {
 }
 
 DPIEngine::~DPIEngine() {
-    std::cout << "Calling destructor" << std::endl;
+    std::cout << "Calling DPIEngine Destructor" << std::endl;
 }
 
 } 

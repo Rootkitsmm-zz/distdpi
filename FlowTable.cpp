@@ -82,6 +82,7 @@ FlowTable::InsertOrUpdateFlows(ConnKey *key, std::string pkt_string) {
         mdata.dir = 0;
         mdata.pktnum = it->second.packetnum;
         mdata.data.append(pkt_string);
+        mdata.exit_flag = 0;
         hash = this->conn_table.hash_function()(it->first) % numQueues_;
         it->second.queue = hash;
         this->ftbl_queue_list_[hash]->push(mdata);
@@ -96,6 +97,7 @@ FlowTable::InsertOrUpdateFlows(ConnKey *key, std::string pkt_string) {
         mdata.dir = dir;
         mdata.pktnum = it->second.packetnum;
         mdata.data.append(pkt_string);
+        mdata.exit_flag = 0;
         hash = conn_table.hash_function()(it->first) % numQueues_;
         if (it->second.class_state == NAVL_STATE_INSPECTING) {
             if(it->second.dpi_state != NULL)
@@ -154,7 +156,12 @@ void FlowTable::InsertIntoClassifiedTbl(ConnKey *key, std::string &dpi_data) {
 void FlowTable::FlowTableCleanup() {
     std::cout << "Flow Table cleanup thread started " << std::endl;
     for (;;) {
-        sleep(60);
+        {
+            std::unique_lock<std::mutex> lk(mutex_);
+            cv_.wait_for(lk, std::chrono::milliseconds(10000));
+            if(!running_)
+                break;
+        }
         for (auto it = conn_table.begin(); it != conn_table.end(); ++it) {
             if(difftime(time(0), it->second.classified_timestamp) > 60) {
                 ftbl_mutex.lock();
@@ -163,22 +170,31 @@ void FlowTable::FlowTableCleanup() {
                 ftbl_mutex.unlock();
             }
         }
-        printf("\n Classified table size %d", classified_table.size());        
     }
     std::cout << "Flow Table cleanup exiting " << std::endl;
 }
 
+void FlowTable::DatapathUpdate() {
+}
+
 void FlowTable::start() {
     running_ = true;
-    cleanup_thread = std::thread(&FlowTable::FlowTableCleanup, this);
+    flowCleanupThread_ = std::thread(&FlowTable::FlowTableCleanup, this);
+    datapathUpdateThread_ = std::thread(&FlowTable::DatapathUpdate, this);
 }
 
 void FlowTable::stop () {
     std::cout << "Flow1 Table stop called " << std::endl;
-    std::unique_lock<std::mutex> lk(mutex_);
-    running_ = false;
-    cv_.notify_all();
-    cleanup_thread.join();
+    {
+        std::unique_lock<std::mutex> lk(mutex_);
+        running_ = false;
+        cv_.notify_one();
+    }
+    flowCleanupThread_.join();
+    ConnMetadata m;
+    m.exit_flag = 1;
+    for (int i = 0; i < numQueues_; i++)
+        ftbl_queue_list_[i]->push(m);
     std::cout << "Flow Table stop called " << std::endl;
 }
 
@@ -189,7 +205,7 @@ FlowTable::FlowTable(int numOfQueues):
 }
 
 FlowTable::~FlowTable() {
-    std::cout << "Calling destructor" << std::endl;
+    std::cout << "Calling FlowTable Destructor" << std::endl;
 }
 
 } 

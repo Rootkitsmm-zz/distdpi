@@ -29,6 +29,7 @@
 #include <fcntl.h>
 #include <time.h>
 #include <assert.h>
+#include <signal.h>
 #include "netx_lib_api.h"
 #include <netx_service.h>
 
@@ -130,6 +131,7 @@ void *pvt_data_g = NULL;
 
 void *obj = NULL;
 PacketCbPtr ptrcb;
+int running_ = 0;
 
 void
 Netx_LibReply_Callback (void *filter, void *callback_data,
@@ -216,7 +218,7 @@ Netx_LibReply_Callback (void *filter, void *callback_data,
          // connection action
          num_conn_set_g = cd_msg->hdr.count;
          conn_set_g_size = num_conn_set_g*sizeof(Netx_Conn_Info_Brief_t);
-         conn_set_g = malloc(conn_set_g_size);
+         conn_set_g = (Netx_Conn_Info_Brief_t *) malloc(conn_set_g_size);
          if (conn_set_g) {
             LOG(14, "conn_set_g ptr is %p\n", conn_set_g);
             // Read only conn_set_g_size
@@ -339,7 +341,7 @@ Log(int level, const char *format, ...)
 }
 
 filter *
-LookupFilter(char *vcUUID, int vNicIndex)
+LookupFilter(char *vcUUID, unsigned int vNicIndex)
 {
    int i;
 
@@ -688,7 +690,7 @@ static DVFilterStatus
 CreateFilter(DVFilterHandle handle,
 		       DVFilterImpl *privateData)
 {
-   filter *f = calloc(1, sizeof(*f));
+   filter *f = (filter *) calloc(1, sizeof(*f));
    static char failedFilterName[sizeof(f->filterName)];
 
    if (f == NULL) {
@@ -765,7 +767,7 @@ DestroyFilter(DVFilterImpl filterImpl)
 
    LOG(0, "DestroyFilter %p\n", f->handle);
 
-   f->magic = ~FILTER_MAGIC;
+   f->magic = (filterMagic) ~FILTER_MAGIC;
 
    ASSERT(filterListCount > 0);
    if (filterListCount > 1) {
@@ -886,6 +888,7 @@ done:
  *
  ******************************************************************************
  */
+#if 0
 static void
 PrintPacketInfo(PktHandle *pkt, filterPktInfo *info, DVFilterDirection direction)
 {
@@ -936,12 +939,13 @@ PrintPacketInfo(PktHandle *pkt, filterPktInfo *info, DVFilterDirection direction
                info->vlanID, info->priority);
    }
 
-   LOG(10, "packet %s, len %u, metadatalen = %u, ethType = %s (%.4x), %s%s\n",
+   printf("packet %s, len %u, metadatalen = %u, ethType = %s (%.4x), %s%s\n",
        direction == DVFILTER_FROM_SWITCH ? "IN" : "OUT",
        DVFilter_GetPktLen(pkt),
        DVFilter_GetPktMetadataLen(pkt),
        ethTypeStr, info->ethtype, protoStr, portStr);
 }
+#endif
 
 /******************************************************************************
  *                                                                       */ /**
@@ -985,7 +989,7 @@ ParsePacket(PktHandle *pkt,
    filterDirectContext direct[1];
    DirectContextInit(direct, smallBuffer, sizeof(smallBuffer));
 
-   buf = PktDirectRef(pkt, 0, sizeof(Eth_Header), direct);
+   buf = (uint8_t *) PktDirectRef(pkt, 0, sizeof(Eth_Header), direct);
    if (buf == NULL) {
       return;
    }
@@ -1012,7 +1016,7 @@ ParsePacket(PktHandle *pkt,
       switch(ethtype) {
       case ETH_TYPE_IPV6_NBO:
          // ipv6Header = (IPv6Hdr *) (buf + offset);
-         ipv6Header = PktDirectRef(pkt, offset, sizeof(IPv6Hdr), direct);
+         ipv6Header = (IPv6Hdr *) PktDirectRef(pkt, offset, sizeof(IPv6Hdr), direct);
          if (ipv6Header == NULL) {
             return;
          }
@@ -1021,10 +1025,15 @@ ParsePacket(PktHandle *pkt,
          break;
       case ETH_TYPE_IPV4_NBO:
          // ipHeader = (IPHdr *) (buf + offset);
-         ipHeader = PktDirectRef(pkt, offset, sizeof(IPHdr), direct);
+         ipHeader = (IPHdr *) PktDirectRef(pkt, offset, sizeof(IPHdr), direct);
          if (ipHeader == NULL) {
             return;
          }
+
+         char *pktptr;
+         pktptr = (char *) ipHeader;
+         //ptrcb(obj, pktptr, ipHeader->tot_len);
+
          protocol = ipHeader->protocol;
          nextHeaderOffset = (ipHeader->ihl * 4);
          break;
@@ -1040,7 +1049,7 @@ ParsePacket(PktHandle *pkt,
          UDPHdr *udpHdr;
 
          //udpHdr = (UDPHdr *) (buf + offset + nextHeaderOffset);
-         udpHdr = PktDirectRef(pkt, offset + nextHeaderOffset,
+         udpHdr = (UDPHdr *) PktDirectRef(pkt, offset + nextHeaderOffset,
                                          sizeof(UDPHdr), direct);
          if (udpHdr == NULL) {
             return;
@@ -1052,7 +1061,7 @@ ParsePacket(PktHandle *pkt,
          TCPHdr *tcpHdr;
 
          // tcpHdr = (TCPHdr *) (buf + offset + nextHeaderOffset);
-         tcpHdr = PktDirectRef(pkt, offset + nextHeaderOffset,
+         tcpHdr = (TCPHdr *) PktDirectRef(pkt, offset + nextHeaderOffset,
                                          sizeof(TCPHdr), direct);
          if (tcpHdr == NULL) {
             return;
@@ -1138,7 +1147,7 @@ PerformNAPT(PktHandle *pkt,
    DirectContextInit(direct, lclBuf, sizeof(lclBuf));
 
    frameLen = DVFilter_GetPktLen(pkt);
-   buf = PktDirectRef(pkt, 0, sizeof(Eth_Header), direct);
+   buf = (uint8_t *) PktDirectRef(pkt, 0, sizeof(Eth_Header), direct);
    if (buf == NULL) {
       return (DVFilterStatus) NO_MATCH;
    }
@@ -1153,7 +1162,7 @@ PerformNAPT(PktHandle *pkt,
 
       switch(ethtype) {
       case ETH_TYPE_IPV6_NBO:
-         ipv6Header = PktDirectRef(pkt, offset, sizeof(IPv6Hdr), direct);
+         ipv6Header = (IPv6Hdr *) PktDirectRef(pkt, offset, sizeof(IPv6Hdr), direct);
          if (ipv6Header == NULL) {
             return (DVFilterStatus) NO_MATCH;
          }
@@ -1165,7 +1174,7 @@ PerformNAPT(PktHandle *pkt,
          break;
       case ETH_TYPE_IPV4_NBO:
          // ipHeader = (IPHdr *) (buf + offset);
-         ipHeader = PktDirectRef(pkt, offset, sizeof(IPHdr), direct);
+         ipHeader = (IPHdr *) PktDirectRef(pkt, offset, sizeof(IPHdr), direct);
          if (ipHeader == NULL) {
             return (DVFilterStatus) NO_MATCH;
          }
@@ -1190,7 +1199,7 @@ PerformNAPT(PktHandle *pkt,
             return DVFILTER_STATUS_ERROR;
          }
          //tcpHdr = (TCPHdr *) (buf + offset + nextHeaderOffset);
-         tcpHdr = PktDirectRef(pkt, offset + nextHeaderOffset,
+         tcpHdr = (TCPHdr *) PktDirectRef(pkt, offset + nextHeaderOffset,
                                       sizeof(TCPHdr), direct);
          ASSERT(tcpHdr);
 
@@ -1244,13 +1253,17 @@ ProcessPacket(DVFilterImpl filterImpl,
    filter *f = (filter *) filterImpl;
    filterState *state = &f->state;
    filterPktInfo pktInfo;
+   uint16_t frameLen;
+   uint8_t  *buf, smallBuffer[128];
+   filterDirectContext direct[1];
+   DirectContextInit(direct, smallBuffer, sizeof(smallBuffer));
 
    ASSERT(f->magic == FILTER_MAGIC);
 
-   if (logLevel >= 10) {
+   if (1) {
       memset(&pktInfo, 0, sizeof(pktInfo));
       ParsePacket(pkt, &pktInfo);
-      PrintPacketInfo(pkt, &pktInfo, direction);
+      //PrintPacketInfo(pkt, &pktInfo, direction);
    }
 
 
@@ -1262,18 +1275,16 @@ ProcessPacket(DVFilterImpl filterImpl,
           ((int64_t*)metadata)[1]);
    }
 #endif
+   frameLen = DVFilter_GetPktLen(pkt);
+   buf = (uint8_t *) PktDirectRef(pkt, 0, sizeof(Eth_Header), direct);
+   ptrcb(obj, (uint8_t *) buf, frameLen);
 
-   if (g_action == ACTION_COPY) {
+  if (g_action == ACTION_COPY) {
       //Copy Packet. Drop it.
       LOG(11, "ACTION_COPY: Dropping one packet\n");
       DVFilter_FreePkt(pkt);
       return;
    }
-
-      IPHdr *ipHeader;
-      filterDirectContext direct[1];
-      ipHeader = PktDirectRef(pkt, 14, sizeof(IPHdr), direct);
-      ptrcb(obj, (uint8_t *) ipHeader, ipHeader->tot_len);
 
    if ((direction == DVFILTER_TO_SWITCH && state->filterToSwitch) ||
        (direction == DVFILTER_FROM_SWITCH && state->filterFromSwitch)) {
@@ -1350,7 +1361,6 @@ ProcessPacket(DVFilterImpl filterImpl,
    } else {
       DVFilter_SendPkt(f->handle, pkt, direction);
    }
-
    return;
 }
 
@@ -1378,8 +1388,8 @@ ProcessFilterIoctlRequest(DVFilterImpl filterImpl,
        requestId, requestId == DVFILTER_INVALID_IOCTL_REQUEST_ID ? "no " : "");
 
    if (payloadLen < sizeof(Netx_Notice_Msg_t) ) {
-      fprintf(stderr, "Payload len %d is < sizeof(Netx_Notice_Msg_t) %d . Hence Returning \n",
-              payloadLen, sizeof(Netx_Notice_Msg_t));
+      //fprintf(stderr, "Payload len %d is < sizeof(Netx_Notice_Msg_t) %d . Hence Returning \n",
+      //        payloadLen, sizeof(Netx_Notice_Msg_t));
       return;
    }
 
@@ -1390,8 +1400,8 @@ ProcessFilterIoctlRequest(DVFilterImpl filterImpl,
          LOG(14, "processing msg %d\n", msg->notice);
 
          if (payloadLen < sizeof(Netx_Notice_Msg_t) + sizeof(Netx_Service_Info_t)) {
-            fprintf(stderr, "Payload len %d is not correct for msg type . Hence Returning \n",
-                    payloadLen);
+            //fprintf(stderr, "Payload len %d is not correct for msg type . Hence Returning \n",
+            //        payloadLen);
             return;
          }
 
@@ -1418,10 +1428,10 @@ ProcessFilterIoctlRequest(DVFilterImpl filterImpl,
 
    if (requestId != DVFILTER_INVALID_IOCTL_REQUEST_ID) {
       char *s = (char *) payload;
-      int i;
+      unsigned int i;
 
       for (i = 0; i < payloadLen && *s; i++) {
-	 s[i] = toupper(s[i]);
+	  s[i] = toupper(s[i]);
       }
 
       DVFilter_SendFilterIoctlReply(f->handle,
@@ -1620,6 +1630,9 @@ clean_exit:
    return ret;
 }
 
+void stop_netx_service() {
+    running_ = 0;
+}
 
 /******************************************************************************
  *                                                                       */ /**
@@ -1638,6 +1651,8 @@ selectEventLoop(int cliChannelServerFd)
    FD_ZERO(&readSet);
    FD_ZERO(&writeSet);
    InitCliChannel(&cliChannel);
+
+   running_ = 1;
 
    while (1) {
       int num;
@@ -1671,6 +1686,8 @@ selectEventLoop(int cliChannelServerFd)
       maxFd = DVFilter_AddReadyWriteFdset(&writeSet, maxFd);
 
       num = select(maxFd + 1, &readSet, &writeSet, NULL, NULL);
+      if(!running_)
+         break;
       if (num > 0) {
          res = DVFilter_ProcessSelectEvent(&readSet, &writeSet, maxFd, num);
          if (res == DVFILTER_STATUS_DISCONNECT) {
@@ -1724,7 +1741,7 @@ selectEventLoop(int cliChannelServerFd)
  ******************************************************************************
  */
 int
-start_netx_service(char *AgentName, PacketCbPtr ptr, void *p)
+start_netx_service(const char *AgentName, PacketCbPtr ptr, void *p)
 {
    static DVFilterSlowPathOps ops;
 
@@ -1798,6 +1815,7 @@ start_netx_service(char *AgentName, PacketCbPtr ptr, void *p)
       }
    }
 */
+   g_action = ACTION_COPY;
    // Initialize the filter list
    filterListCount = 0;
    filterListSize = 100;

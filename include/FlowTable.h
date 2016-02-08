@@ -65,6 +65,7 @@ class FlowTable {
         uint32_t pktnum;
         uint32_t dir;
         std::string data;
+        uint8_t exit_flag;
     };
 
     struct ConnKeyHasher {
@@ -122,18 +123,20 @@ class FlowTable {
                                 navl_state_t state, 
                                 navl_conn_t nc, 
                                 int error);
-    int numQueues_;
 
     void start();
     void stop();
 
   private:
     void FlowTableCleanup();
+    void DatapathUpdate();
     std::mutex ftbl_mutex;
+    int numQueues_;
     bool running_;
     std::mutex mutex_;
     std::condition_variable cv_;
-    std::thread cleanup_thread;
+    std::thread flowCleanupThread_;
+    std::thread datapathUpdateThread_;
 };
 
 }
