@@ -1,9 +1,16 @@
 #ifndef DISTDPI_H
 #define DISTDPI_H
 
+#include "SignalHandler.h"
+#include "FlowTable.h"
+#include "PacketHandler.h"
+#include "DPIEngine.h"
+
+#include <memory>
+
 namespace distdpi {
 
-class DistDpi {
+class DistDpi: public SignalHandler {
 public:
 
     DistDpi();
@@ -11,8 +18,18 @@ public:
 
     void start();
 private:
+    std::vector<int> signals;
+    std::unique_ptr<DPIEngine> dpi_engine_;
+    std::shared_ptr<FlowTable> ftb;
+    std::unique_ptr<PacketHandler> pkt_hdl_;
+    std::vector<std::thread> th;
 
+    bool running_;
+    bool notify;
+    std::mutex mutex_;
+    std::condition_variable cv_;
 protected:
+    void stop();
 };
 
 

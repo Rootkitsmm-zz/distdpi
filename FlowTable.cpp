@@ -36,6 +36,10 @@
 
 namespace distdpi {
 
+std::mutex m_mutex;
+std::condition_variable m_cv;
+bool notify = false;
+
 static const char *
 get_state_string(navl_state_t state)
 {
@@ -109,21 +113,73 @@ void FlowTable::updateFlowTableDPIData(ConnInfo *info,
                                        navl_state_t state,
                                        navl_conn_t nc,
                                        int error) {
-    //std::lock_guard<std::mutex> lk(ftbl_mutex);
-    ftbl_mutex.lock();
+    std::lock_guard<std::mutex> lk(ftbl_mutex);
     static char name[9];
 
     info->error = error;
     info->class_state = state;
     info->dpi_result = navl_app_get(handle, result, &info->dpi_confidence);
 
-
+    if (info->class_state == NAVL_STATE_CLASSIFIED) {
+        std::string dpi_data;
+        info->classified_timestamp = time(0);
+        if (info->dpi_result) {
+            navl_proto_get_name(handle, info->dpi_result, name, sizeof(name));
+            dpi_data.assign(name, strlen(name));
+        }
+        else {
+            dpi_data = "UNKNOWN";
+        }
+        ConnKey key;
+        memcpy(&key, &(info->key), sizeof(key));
+        InsertIntoClassifiedTbl(&key, dpi_data);
+    }
     printf("    Classification: %s %s after %u packets %u%% confidence\n", info->dpi_result ? navl_proto_get_name(handle, info->dpi_result, name, sizeof(name)) : "UNKNOWN"
         , get_state_string(info->class_state)
         , info->classified_num
         , info->dpi_confidence);
-    printf("    Flow table size %d\n", conn_table.size()); 
-    ftbl_mutex.unlock();
+}
+
+void FlowTable::InsertIntoClassifiedTbl(ConnKey *key, std::string &dpi_data) {
+    auto it = classified_table.find(*key);
+    if (it == classified_table.end())
+    {
+        std::pair<FlowTable::classified_unordmap::iterator,bool> ret;
+        ret = this->classified_table.insert(std::make_pair(*key, dpi_data));
+    }
+    else {
+    }
+}
+
+void FlowTable::FlowTableCleanup() {
+    std::cout << "Flow Table cleanup thread started " << std::endl;
+    for (;;) {
+        sleep(60);
+        for (auto it = conn_table.begin(); it != conn_table.end(); ++it) {
+            if(difftime(time(0), it->second.classified_timestamp) > 60) {
+                ftbl_mutex.lock();
+                std::cout << "Cleaning flow: src ip " << it->first.srcaddr << " Dst ip " << it->first.dstaddr << std::endl;
+                conn_table.erase(it);
+                ftbl_mutex.unlock();
+            }
+        }
+        printf("\n Classified table size %d", classified_table.size());        
+    }
+    std::cout << "Flow Table cleanup exiting " << std::endl;
+}
+
+void FlowTable::start() {
+    running_ = true;
+    cleanup_thread = std::thread(&FlowTable::FlowTableCleanup, this);
+}
+
+void FlowTable::stop () {
+    std::cout << "Flow1 Table stop called " << std::endl;
+    std::unique_lock<std::mutex> lk(mutex_);
+    running_ = false;
+    cv_.notify_all();
+    cleanup_thread.join();
+    std::cout << "Flow Table stop called " << std::endl;
 }
 
 FlowTable::FlowTable(int numOfQueues):

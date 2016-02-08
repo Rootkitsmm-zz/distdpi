@@ -40,6 +40,15 @@ class Queue {
         mlock.unlock();
         cond_.notify_one();
     }
+    
+    void clear() {
+        std::unique_lock<std::mutex> mlock(mutex_);
+        while (!queue_.empty())
+            pop();
+        mlock.unlock();
+        cond_.notify_all();
+    }
+
     Queue()=default;
     Queue(const Queue&) = delete;            // disable copying
     Queue& operator=(const Queue&) = delete; // disable assignment

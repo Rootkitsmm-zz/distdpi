@@ -15,6 +15,7 @@ CXXSOURCES = \
              ./PacketHandler.cpp \
              ./FlowTable.cpp \
              ./DPIEngine.cpp \
+             ./SignalHandler.cpp \
 			 ./navl_externals_posix.c \
 			 ./netx_sample_service.c \
              ./Main.cpp
@@ -31,4 +32,4 @@ $(PROGRAM): $(CXXOBJECTS)
 	$(CXX) $(CXXFLAGS) -o $@ $(CXXOBJECTS) $(LDFLAGS)
 
 clean:
-	$(RM) $(CXXOBJECTS) $(PROGRAM)
+	$(RM) *.o $(PROGRAM)

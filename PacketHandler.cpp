@@ -56,6 +56,8 @@ PacketHandler::PacketHandler(std::string AgentName,
 
 void PacketHandler::PacketProducer(uint8_t *pkt, uint32_t len) {
     std::string packet;
+    //if (pkt == '\0' || pkt == NULL)
+    //    return;
     packet.assign((char*)pkt, len);
     while(!queue_.write(packet)) {
         continue;
@@ -75,12 +77,15 @@ void PacketHandler::PacketConsumer() {
 
         while(!notify)
             m_cv.wait(lock);
+        if (!running_)
+            break;
         while(!queue_.read(pkt)) {
             continue;
         }
         notify = false;
         this->classifyFlows(pkt);
     } 
+    std::cout << "Exiting packet consumer thread " << std::endl;
 }
 
 void PacketHandler::classifyFlows(std::string &packet) {
@@ -193,25 +198,27 @@ void PacketHandler::ConnectToPktProducer() {
 }
 
 void PacketHandler::start() {
-    //signals.push_back(SIGTERM);
-    //this->install(this, signals);
+    running_ = true;
     pkthdl_threads.push_back(std::thread(&PacketHandler::ConnectToPktProducer, this));
     pkthdl_threads.push_back(std::thread(&PacketHandler::PacketConsumer, this));
 }
-/*
+
 void PacketHandler::stop() {
+    running_ = false;
+    notify = true;
+    m_cv.notify_one();
     for (int i = 0; i < pkthdl_threads.size(); i++) {
         pkthdl_threads[i].join();
     }
     std::cout << " PacketHandler stop called " << std::endl;    
 }
-*/
+
 void PacketHandler::executeCb() {
     std::cout << "Timer called " << std::endl;
 }
 
 PacketHandler::~PacketHandler() {
-    std::cout << "Calling destructor" << std::endl;
+    std::cout << " 1 Calling destructor" << std::endl;
 }
 
 } 

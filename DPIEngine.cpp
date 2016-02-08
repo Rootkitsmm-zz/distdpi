@@ -6,6 +6,8 @@
 #include <unistd.h>
 #include <functional>
 #include <navl.h>
+#include <utility>
+
 #include <DPIEngine.h>
 
 void bind_navl_externals();
@@ -30,6 +32,8 @@ DPIEngine::navl_classify_callback(navl_handle_t handle, navl_result_t result, na
     FlowTable::ConnInfo *info = static_cast<FlowTable::ConnInfo *>(arg);
     ((DPIEngine *)ptrForCb)->ftbl_->updateFlowTableDPIData(info, handle, result, state, nc, error);
     dpiengine_lock.unlock();
+    if (info->class_state == NAVL_STATE_CLASSIFIED)
+        navl_conn_destroy(handle, info->dpi_state);
     return 0;
 }
 
@@ -64,27 +68,28 @@ void DPIEngine::Dequeue(int queue) {
             }
         }
         else {
-            if(info->dpi_state != NULL) {
-            if (!info->error && m.data.size() && info->dpi_state) {
+            if (!info->error && m.data.size() && info->dpi_state && info->class_state != NAVL_STATE_CLASSIFIED) {
                 if (navl_classify(g_navlhandle_, NAVL_ENCAP_NONE, m.data.c_str(), m.data.size(), info->dpi_state, m.dir, DPIEngine::navl_classify_callback, (void *)info))
                 {
                     std::cout << "Returning unable to dpi :P dir " << std::endl;
                 }
             }
-            }
         }
     }
+    navl_fini(g_navlhandle_);
+    navl_close(g_navlhandle_);
     std::cout << " Exiting thread for queue " << queue << std::endl;
 }
 
 void DPIEngine::start() {
-    std::vector<std::thread> dpithreads;
-
     for (int i = 0; i < num_of_dpi_threads; i++)
         dpithreads.push_back(std::thread(&DPIEngine::Dequeue, this, i));
+}
 
+void DPIEngine::stop () {
     for (int i = 0; i < num_of_dpi_threads; i++)
         dpithreads[i].join();
+    std::cout << "DPI Engine stop called " << std::endl;
 }
 
 DPIEngine::~DPIEngine() {

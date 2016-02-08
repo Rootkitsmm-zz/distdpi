@@ -2,6 +2,7 @@
 #define FLOWTABLE_H
 
 #include "Queue.h"
+#include "Timer.h"
 #include "ProducerConsumerQueue.h"
 #include "navl.h"
 
@@ -55,6 +56,7 @@ class FlowTable {
         u_int   dpi_result;
         int     dpi_confidence;
         int     error;
+        int     classified_timestamp;
     }; 
 
     struct ConnMetadata {
@@ -102,12 +104,17 @@ class FlowTable {
     typedef std::unordered_map<ConnKey, ConnInfo, ConnKeyHasher, ConnKeyEqual> unorderedmap;
     std::unordered_map<ConnKey, ConnInfo, ConnKeyHasher, ConnKeyEqual> conn_table;
 
+    typedef std::unordered_map<ConnKey, std::string, ConnKeyHasher, ConnKeyEqual> classified_unordmap;
+    std::unordered_map<ConnKey, std::string, ConnKeyHasher, ConnKeyEqual> classified_table;
+
     std::vector<std::unique_ptr<Queue<ConnMetadata>>> ftbl_queue_list_;
     
     FlowTable(int numOfQueues);
     ~FlowTable();
 
     void InsertOrUpdateFlows(ConnKey *key, std::string pkt_string);
+
+    void InsertIntoClassifiedTbl(ConnKey *key, std::string &dpi_data);
 
     void updateFlowTableDPIData(ConnInfo *info, 
                                 navl_handle_t handle, 
@@ -117,8 +124,16 @@ class FlowTable {
                                 int error);
     int numQueues_;
 
+    void start();
+    void stop();
+
   private:
+    void FlowTableCleanup();
     std::mutex ftbl_mutex;
+    bool running_;
+    std::mutex mutex_;
+    std::condition_variable cv_;
+    std::thread cleanup_thread;
 };
 
 }

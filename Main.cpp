@@ -15,6 +15,7 @@ using namespace distdpi;
 
 int main(int argc, char* argv[]) {
     DistDpi distdpi;
-    distdpi.start();
+    std::thread t = std::thread(&DistDpi::start, &distdpi);
+    t.join();
     return 0;
 }
