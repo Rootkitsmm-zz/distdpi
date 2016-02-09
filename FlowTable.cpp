@@ -56,15 +56,27 @@ get_state_string(navl_state_t state)
     }
 }
 
+FlowTable::unorderedmap::iterator FlowTable::findOrDeleteTableEntry(ConnKey *key, bool delete_flag) {
+    std::lock_guard<std::mutex> lk(ftbl_mutex);
+    FlowTable::unorderedmap::iterator it = conn_table.find(*key);
+    if(!delete_flag)
+        return it;
+    else {
+        if (it != conn_table.end())
+            conn_table.erase(it);    
+    }
+    return it;
+}
+
 void
 FlowTable::InsertOrUpdateFlows(ConnKey *key, std::string pkt_string) {
-    std::lock_guard<std::mutex> lk(ftbl_mutex);
     ConnMetadata mdata;
     int hash;
     ConnInfo *info;
     ConnKey *key1;
 
-    auto it = conn_table.find(*key);
+    //auto it = conn_table.find(*key);
+    auto it = findOrDeleteTableEntry(key, false);
     if (it == conn_table.end())
     {
         std::pair<FlowTable::unorderedmap::iterator,bool> ret;
@@ -148,8 +160,27 @@ void FlowTable::InsertIntoClassifiedTbl(ConnKey *key, std::string &dpi_data) {
     {
         std::pair<FlowTable::classified_unordmap::iterator,bool> ret;
         ret = this->classified_table.insert(std::make_pair(*key, dpi_data));
+        if (ret.second == false) {
+            std::cout << "flow insert failed " << std::endl;
+            return;
+        }
+        //notify_ = true;
+        //datapathUpdatecv_.notify_one();
     }
     else {
+    }
+}
+
+void FlowTable::DatapathUpdate() {
+    for (;;) {
+        {
+            std::unique_lock<std::mutex> lk(datapathUpdateMutex_);
+            while(!notify_)
+                //datapathUpdatecv_.wait(lock);
+            if (!running_)
+                break;
+            notify = false;
+        }
     }
 }
 
@@ -157,38 +188,33 @@ void FlowTable::FlowTableCleanup() {
     std::cout << "Flow Table cleanup thread started " << std::endl;
     for (;;) {
         {
-            std::unique_lock<std::mutex> lk(mutex_);
-            cv_.wait_for(lk, std::chrono::milliseconds(10000));
+            std::unique_lock<std::mutex> lk(cleanupThreadMutex_);
+            cleanupThreadcv_.wait_for(lk, std::chrono::milliseconds(10000));
             if(!running_)
                 break;
         }
         for (auto it = conn_table.begin(); it != conn_table.end(); ++it) {
             if(difftime(time(0), it->second.classified_timestamp) > 60) {
-                ftbl_mutex.lock();
                 std::cout << "Cleaning flow: src ip " << it->first.srcaddr << " Dst ip " << it->first.dstaddr << std::endl;
-                conn_table.erase(it);
-                ftbl_mutex.unlock();
+                findOrDeleteTableEntry(&it->first, true);
             }
         }
+        std::cout << "Conn table size " << conn_table.size() << std::endl;
     }
     std::cout << "Flow Table cleanup exiting " << std::endl;
-}
-
-void FlowTable::DatapathUpdate() {
 }
 
 void FlowTable::start() {
     running_ = true;
     flowCleanupThread_ = std::thread(&FlowTable::FlowTableCleanup, this);
-    datapathUpdateThread_ = std::thread(&FlowTable::DatapathUpdate, this);
+    //datapathUpdateThread_ = std::thread(&FlowTable::DatapathUpdate, this);
 }
 
 void FlowTable::stop () {
-    std::cout << "Flow1 Table stop called " << std::endl;
     {
-        std::unique_lock<std::mutex> lk(mutex_);
+        std::unique_lock<std::mutex> lk(cleanupThreadMutex_);
         running_ = false;
-        cv_.notify_one();
+        cleanupThreadcv_.notify_one();
     }
     flowCleanupThread_.join();
     ConnMetadata m;

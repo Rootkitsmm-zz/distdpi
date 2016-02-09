@@ -128,13 +128,22 @@ class FlowTable {
     void stop();
 
   private:
+    /**
+     * Flow Table Cleanup Thread. Runs every 1000 milliseconds
+     */ 
     void FlowTableCleanup();
     void DatapathUpdate();
+    unorderedmap::iterator findOrDeleteTableEntry(ConnKey *key, bool delete_flag);
     std::mutex ftbl_mutex;
+    
+    std::mutex cleanupThreadMutex_;
+    std::mutex datapathUpdateMutex_;
     int numQueues_;
     bool running_;
-    std::mutex mutex_;
-    std::condition_variable cv_;
+    bool notify_;
+    std::condition_variable cleanupThreadcv_;
+    std::condition_variable datapathUpdatecv_;
+
     std::thread flowCleanupThread_;
     std::thread datapathUpdateThread_;
 };
