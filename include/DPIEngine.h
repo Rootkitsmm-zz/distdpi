@@ -4,6 +4,7 @@
 #include <memory>
 
 #include "FlowTable.h"
+#include "Queue.h"
 
 namespace distdpi {
 
@@ -24,6 +25,7 @@ private:
     int num_of_dpi_threads;
     std::shared_ptr<FlowTable> ftbl_;
     std::vector<std::thread> dpithreads;
+    std::vector<std::unique_ptr<Queue<FlowTable::ConnMetadata>>> dpiEngineQueueList_;
 };
 
 

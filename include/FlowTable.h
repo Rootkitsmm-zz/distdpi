@@ -11,12 +11,41 @@
 #include <vector>
 #include <queue>
 #include <memory>
+#include <cstdatomic>
+#include <cassert>
+#include <cstdlib>
+#include <stdexcept>
+#include <type_traits>
+#include <utility>
 
 namespace distdpi {
 
 class FlowTable {
   public:
+/*
+    template <typename T>
+    struct atomwrapper
+    {
+        std::atomic<T> _a;
 
+        atomwrapper()
+        :_a()
+        {}
+
+        atomwrapper(const std::atomic<T> &a)
+            :_a(a.load())
+            {}
+
+        atomwrapper(const atomwrapper &other)
+        :_a(other._a.load())
+        {}
+
+        atomwrapper &operator=(const atomwrapper &other)
+        {
+            _a.store(other._a.load());
+        }
+    };
+*/
     struct ConnKey {
         ConnKey()
         : srcaddr(0),
@@ -42,8 +71,22 @@ class FlowTable {
           class_state(NAVL_STATE_INSPECTING),
           dpi_state(NULL), dpi_result(0),
           dpi_confidence(0),
-          error(0) {}
+          error(0), classified_timestamp(0),
+          handle(0), pkt_ref_cnt(0)
+          {} 
 
+        ConnInfo(const ConnInfo& other)
+        : key(other.key),
+          queue(other.queue),
+          connid(other.connid),
+          packetnum(other.packetnum),
+          classified_num(other.classified_num),
+          class_state(other.class_state),
+          dpi_state(other.dpi_state), dpi_result(other.dpi_result),
+          dpi_confidence(other.dpi_confidence),
+          error(other.error), classified_timestamp(other.classified_timestamp),
+          handle(other.handle), pkt_ref_cnt(other.pkt_ref_cnt.load())
+          {}
 
         ConnKey key;
         int queue;
@@ -57,6 +100,10 @@ class FlowTable {
         int     dpi_confidence;
         int     error;
         int     classified_timestamp;
+        int     lastpacket_timestamp;
+        int     handle;
+        //atomwrapper<int> pkt_ref_cnt;
+        std::atomic<int> pkt_ref_cnt;
     }; 
 
     struct ConnMetadata {
@@ -113,16 +160,16 @@ class FlowTable {
     FlowTable(int numOfQueues);
     ~FlowTable();
 
-    void InsertOrUpdateFlows(ConnKey *key, std::string pkt_string);
+    void InsertOrUpdateFlows(ConnKey *key, std::string pkt_string, void *filter);
 
     void InsertIntoClassifiedTbl(ConnKey *key, std::string &dpi_data);
 
-    void updateFlowTableDPIData(ConnInfo *info, 
-                                navl_handle_t handle, 
-                                navl_result_t result, 
-                                navl_state_t state, 
-                                navl_conn_t nc, 
-                                int error);
+    int updateFlowTableDPIData(ConnInfo *info, 
+                               navl_handle_t handle, 
+                               navl_result_t result, 
+                               navl_state_t state, 
+                               navl_conn_t nc, 
+                               int error);
 
     void start();
     void stop();
@@ -135,6 +182,7 @@ class FlowTable {
     void DatapathUpdate();
     unorderedmap::iterator findOrDeleteTableEntry(ConnKey *key, bool delete_flag);
     std::mutex ftbl_mutex;
+    std::mutex update_mutex;
     
     std::mutex cleanupThreadMutex_;
     std::mutex datapathUpdateMutex_;

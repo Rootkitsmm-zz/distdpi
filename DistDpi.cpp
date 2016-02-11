@@ -41,6 +41,7 @@ void DistDpi::start() {
     notify = false;
     std::cout << "Starting DPI engine " << std::endl;
     signals.push_back(SIGTERM);
+    signals.push_back(SIGINT);
     this->install(this, signals);
    
     //std::shared_ptr<FlowTable> ftb = std::make_shared<FlowTable> (dpi_instances);

@@ -888,7 +888,7 @@ done:
  *
  ******************************************************************************
  */
-#if 0
+
 static void
 PrintPacketInfo(PktHandle *pkt, filterPktInfo *info, DVFilterDirection direction)
 {
@@ -945,7 +945,7 @@ PrintPacketInfo(PktHandle *pkt, filterPktInfo *info, DVFilterDirection direction
        DVFilter_GetPktMetadataLen(pkt),
        ethTypeStr, info->ethtype, protoStr, portStr);
 }
-#endif
+
 
 /******************************************************************************
  *                                                                       */ /**
@@ -1257,12 +1257,13 @@ ProcessPacket(DVFilterImpl filterImpl,
    uint8_t  *buf, smallBuffer[128];
    filterDirectContext direct[1];
    DirectContextInit(direct, smallBuffer, sizeof(smallBuffer));
+   PktMetadata pkt_mdata;
 
    ASSERT(f->magic == FILTER_MAGIC);
 
    if (1) {
-      memset(&pktInfo, 0, sizeof(pktInfo));
-      ParsePacket(pkt, &pktInfo);
+      //memset(&pktInfo, 0, sizeof(pktInfo));
+      //ParsePacket(pkt, &pktInfo);
       //PrintPacketInfo(pkt, &pktInfo, direction);
    }
 
@@ -1277,7 +1278,12 @@ ProcessPacket(DVFilterImpl filterImpl,
 #endif
    frameLen = DVFilter_GetPktLen(pkt);
    buf = (uint8_t *) PktDirectRef(pkt, 0, sizeof(Eth_Header), direct);
-   ptrcb(obj, (uint8_t *) buf, frameLen);
+   pkt_mdata.filterPtr = f;
+   pkt_mdata.pktPtr = (char *) buf;
+   pkt_mdata.dir = direction;
+
+   //ptrcb(obj, (uint8_t *) buf, frameLen);
+   ptrcb(obj, &pkt_mdata, frameLen);
 
   if (g_action == ACTION_COPY) {
       //Copy Packet. Drop it.

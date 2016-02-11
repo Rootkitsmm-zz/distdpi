@@ -20,12 +20,14 @@
 #include <type_traits>
 #include <utility>
 #include <csignal>
+#include <fstream>    
+#include <syslog.h>
 
 #include <ProducerConsumerQueue.h>
 #include <PacketHandler.h>
 #include <Timer.h>
 #include <UnixServer.h>
-#include <netx_service.h>
+//#include <netx_service.h>
 
 #ifdef FREEBSD
 #include <sys/socket.h>
@@ -50,50 +52,69 @@ PacketHandler::PacketHandler(std::string AgentName,
                              std::shared_ptr<FlowTable> ftbl):
     Timer(5.0),
     ftbl_(ftbl),
-    queue_(10000),
+    queue_(500000),
     AgentName_(AgentName) {
 }
 
-void PacketHandler::PacketProducer(uint8_t *pkt, uint32_t len) {
-    std::string packet;
+//void PacketHandler::PacketProducer(uint8_t *pkt, uint32_t len) {
+void PacketHandler::PacketProducer(PktMetadata *pktmdata, uint32_t len) {
+    //std::string packet;
+    PktMdata mdata;
     //if (pkt == '\0' || pkt == NULL)
     //    return;
-    packet.assign((char*)pkt, len);
-    while(!queue_.write(packet)) {
+    //std::lock_guard<std::mutex> lock(m_mutex);
+    //packet.assign((char*)pkt, len);
+    mdata.filter = pktmdata->filterPtr;
+    mdata.pkt.assign((char*)pktmdata->pktPtr, len);
+
+    //while(!queue_.write(packet)) {
+    while(!queue_.write(mdata)) {
         continue;
     }
     notify = true;
     m_cv.notify_one();
 }
 
-void PacketHandler::StaticPacketProducer(void *obj, uint8_t *pkt, uint32_t len) {
-    ((PacketHandler *)obj)->PacketProducer(pkt, len);
+//void PacketHandler::StaticPacketProducer(void *obj, uint8_t *pkt, uint32_t len) {
+void PacketHandler::StaticPacketProducer(void *obj, PktMetadata *pktmdata, uint32_t len) {
+    //((PacketHandler *)obj)->PacketProducer(pkt, len);
+    ((PacketHandler *)obj)->PacketProducer(pktmdata, len);
 }
 
 void PacketHandler::PacketConsumer() {
     for (;;) {
-        std::string pkt;
+        //std::string pkt;
+        PktMdata mdata;        
         std::unique_lock<std::mutex> lock(m_mutex);
 
         while(!notify)
             m_cv.wait(lock);
         if (!running_)
             break;
-        while(!queue_.read(pkt)) {
-            continue;
+        
+        //while(!queue_.read(pkt)) {
+        //    continue;
+        //}
+        while(!queue_.isEmpty()) {
+            //queue_.read(pkt);
+            queue_.read(mdata);
+            this->classifyFlows(&mdata);
         }
         notify = false;
-        this->classifyFlows(pkt);
+        //this->classifyFlows(pkt);
     } 
     std::cout << "Exiting packet consumer thread " << std::endl;
 }
 
-void PacketHandler::classifyFlows(std::string &packet) {
+void PacketHandler::classifyFlows(PktMdata *mdata) {
+//void PacketHandler::classifyFlows(std::string &packet) {
+//void PacketHandler::classifyFlows(std::vector<std::string> &pktlist) {
+    //for (unsigned int i = 0; i < pktlist.size(); i++) {
 #ifdef FREEBSD
     typedef struct ip iphdr;
 #endif
-    const u_char *ptr = (u_char *) packet.c_str();
-    u_int len = packet.size();
+    const u_char *ptr = (u_char *) mdata->pkt.c_str();
+    u_int len = mdata->pkt.size();
     const u_short *eth_type;
     const iphdr *iph;
     FlowTable::ConnKey key;
@@ -149,10 +170,11 @@ void PacketHandler::classifyFlows(std::string &packet) {
     len -= (iph->ihl << 2);
     ptr = reinterpret_cast<const u_char *>(iph) + (iph->ihl << 2);
 #endif
-    populateFlowTable(ptr, len, &key); 
+    populateFlowTable(ptr, len, &key, mdata->filter); 
+    //}
 }
 
-void PacketHandler::populateFlowTable(const u_char *ptr,  u_int len, FlowTable::ConnKey *key) {
+void PacketHandler::populateFlowTable(const u_char *ptr,  u_int len, FlowTable::ConnKey *key, void *filter) {
     const tcphdr *th;
     const udphdr *uh;
 
@@ -190,7 +212,7 @@ void PacketHandler::populateFlowTable(const u_char *ptr,  u_int len, FlowTable::
     std::string pkt_string;
     pkt_string.append((char *)ptr, len);
 
-    ftbl_->InsertOrUpdateFlows(key, pkt_string);
+    ftbl_->InsertOrUpdateFlows(key, pkt_string, filter);
 }
 
 void PacketHandler::ConnectToPktProducer() {
@@ -208,7 +230,7 @@ void PacketHandler::stop() {
     notify = true;
     m_cv.notify_one();
     stop_netx_service();
-    for (int i = 0; i < pkthdl_threads.size(); i++) {
+    for (unsigned int i = 0; i < pkthdl_threads.size(); i++) {
         pkthdl_threads[i].join();
     }
     std::cout << " PacketHandler stop called " << std::endl;    

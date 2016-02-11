@@ -5,7 +5,13 @@
 extern "C" {
 #endif
 
-typedef void (*PacketCbPtr)(void *, uint8_t*, uint32_t);
+typedef struct PktMetadata {
+   void *filterPtr;
+   char *pktPtr;
+   uint8_t dir;
+} PktMetadata;
+
+typedef void (*PacketCbPtr)(void *, PktMetadata *, uint32_t len);
 
 void stop_netx_service();
 

@@ -49,6 +49,10 @@ class Queue {
         cond_.notify_all();
     }
 
+    int size() {
+        return queue_.size();
+    }
+
     Queue()=default;
     Queue(const Queue&) = delete;            // disable copying
     Queue& operator=(const Queue&) = delete; // disable assignment
