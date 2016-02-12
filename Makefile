@@ -15,6 +15,7 @@ CXXSOURCES = \
              ./PacketHandler.cpp \
              ./FlowTable.cpp \
              ./DPIEngine.cpp \
+			 ./DataPathUpdate.cpp \
              ./SignalHandler.cpp \
 			 ./navl_externals_posix.c \
 			 ./netx_sample_service.c \

@@ -45,6 +45,7 @@ using namespace std::placeholders;
 std::mutex m_mutex;
 std::condition_variable m_cv;
 bool notify = false;
+long int pkts = 0;
 
 namespace distdpi {
 
@@ -56,17 +57,37 @@ PacketHandler::PacketHandler(std::string AgentName,
     AgentName_(AgentName) {
 }
 
+void PacketHandler::PktRateMeasurer() {
+    int pktcounter;
+    for (;;) {
+        sleep(5);
+        if (!running_)
+            break;
+        if (pktcounter == 0) {
+            syslog(LOG_INFO, "Packets/Second %d", (pkts - pktcounter) / 5);
+            pktcounter = pkts;
+        }
+        else {
+            syslog(LOG_INFO, "Packets/Second %d", (pkts - pktcounter) / 5);
+            pktcounter = pkts;
+        }
+    }
+}
+
 //void PacketHandler::PacketProducer(uint8_t *pkt, uint32_t len) {
 void PacketHandler::PacketProducer(PktMetadata *pktmdata, uint32_t len) {
     //std::string packet;
     PktMdata mdata;
+
+    pkts++;
     //if (pkt == '\0' || pkt == NULL)
     //    return;
     //std::lock_guard<std::mutex> lock(m_mutex);
     //packet.assign((char*)pkt, len);
+    mdata.dir = pktmdata->dir;
     mdata.filter = pktmdata->filterPtr;
     mdata.pkt.assign((char*)pktmdata->pktPtr, len);
-
+    
     //while(!queue_.write(packet)) {
     while(!queue_.write(mdata)) {
         continue;
@@ -170,11 +191,11 @@ void PacketHandler::classifyFlows(PktMdata *mdata) {
     len -= (iph->ihl << 2);
     ptr = reinterpret_cast<const u_char *>(iph) + (iph->ihl << 2);
 #endif
-    populateFlowTable(ptr, len, &key, mdata->filter); 
+    populateFlowTable(ptr, len, &key, mdata->filter, mdata->dir); 
     //}
 }
 
-void PacketHandler::populateFlowTable(const u_char *ptr,  u_int len, FlowTable::ConnKey *key, void *filter) {
+void PacketHandler::populateFlowTable(const u_char *ptr,  u_int len, FlowTable::ConnKey *key, void *filter, uint8_t dir) {
     const tcphdr *th;
     const udphdr *uh;
 
@@ -212,7 +233,7 @@ void PacketHandler::populateFlowTable(const u_char *ptr,  u_int len, FlowTable::
     std::string pkt_string;
     pkt_string.append((char *)ptr, len);
 
-    ftbl_->InsertOrUpdateFlows(key, pkt_string, filter);
+    ftbl_->InsertOrUpdateFlows(key, pkt_string, filter, dir);
 }
 
 void PacketHandler::ConnectToPktProducer() {
@@ -223,6 +244,7 @@ void PacketHandler::start() {
     running_ = true;
     pkthdl_threads.push_back(std::thread(&PacketHandler::ConnectToPktProducer, this));
     pkthdl_threads.push_back(std::thread(&PacketHandler::PacketConsumer, this));
+    pkthdl_threads.push_back(std::thread(&PacketHandler::PktRateMeasurer, this));
 }
 
 void PacketHandler::stop() {

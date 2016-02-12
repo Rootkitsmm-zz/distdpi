@@ -16,6 +16,7 @@ public:
     struct PktMdata {
         void *filter;
         string pkt;
+        uint8_t dir;
     };
 
     PacketHandler(std::string AgentName, std::shared_ptr<FlowTable> ftbl);
@@ -27,7 +28,8 @@ public:
     void populateFlowTable(const u_char *ptr,
                            u_int len,
                            FlowTable::ConnKey *key,
-                           void *filter);
+                           void *filter,
+                           uint8_t dir);
     void PacketConsumer();
     void ConnectToPktProducer();
     void classifyFlows(PktMdata *mdata);
@@ -44,6 +46,8 @@ private:
     bool running_;
     std::mutex mutex_;
     std::condition_variable cv_;
+
+    void PktRateMeasurer();
 protected:
     virtual void executeCb();
 };

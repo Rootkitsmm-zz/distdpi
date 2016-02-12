@@ -4,6 +4,7 @@
 #include "Queue.h"
 #include "Timer.h"
 #include "ProducerConsumerQueue.h"
+#include "DataPathUpdate.h"
 #include "navl.h"
 
 #include <unordered_map>
@@ -72,7 +73,8 @@ class FlowTable {
           dpi_state(NULL), dpi_result(0),
           dpi_confidence(0),
           error(0), classified_timestamp(0),
-          handle(0), pkt_ref_cnt(0)
+          handle(0), dir(0),
+          filter(NULL), pkt_ref_cnt(0)
           {} 
 
         ConnInfo(const ConnInfo& other)
@@ -85,7 +87,8 @@ class FlowTable {
           dpi_state(other.dpi_state), dpi_result(other.dpi_result),
           dpi_confidence(other.dpi_confidence),
           error(other.error), classified_timestamp(other.classified_timestamp),
-          handle(other.handle), pkt_ref_cnt(other.pkt_ref_cnt.load())
+          handle(other.handle), dir(other.dir), 
+          filter(other.filter), pkt_ref_cnt(other.pkt_ref_cnt.load())
           {}
 
         ConnKey key;
@@ -102,6 +105,8 @@ class FlowTable {
         int     classified_timestamp;
         int     lastpacket_timestamp;
         int     handle;
+        int     dir;
+        void    *filter;
         //atomwrapper<int> pkt_ref_cnt;
         std::atomic<int> pkt_ref_cnt;
     }; 
@@ -157,10 +162,11 @@ class FlowTable {
 
     std::vector<std::unique_ptr<Queue<ConnMetadata>>> ftbl_queue_list_;
     
-    FlowTable(int numOfQueues);
+    FlowTable(std::shared_ptr<DataPathUpdate> dp_update,
+              int numOfQueues);
     ~FlowTable();
 
-    void InsertOrUpdateFlows(ConnKey *key, std::string pkt_string, void *filter);
+    void InsertOrUpdateFlows(ConnKey *key, std::string pkt_string, void *filter, uint8_t dir);
 
     void InsertIntoClassifiedTbl(ConnKey *key, std::string &dpi_data);
 
@@ -180,7 +186,7 @@ class FlowTable {
      */ 
     void FlowTableCleanup();
     void DatapathUpdate();
-    unorderedmap::iterator findOrDeleteTableEntry(ConnKey *key, bool delete_flag);
+    void cleanupFlows(bool final_delete);
     std::mutex ftbl_mutex;
     std::mutex update_mutex;
     
@@ -194,6 +200,7 @@ class FlowTable {
 
     std::thread flowCleanupThread_;
     std::thread datapathUpdateThread_;
+    std::shared_ptr<DataPathUpdate> dpUpdate_;
 };
 
 }

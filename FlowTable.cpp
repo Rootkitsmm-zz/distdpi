@@ -23,6 +23,7 @@
 #include <syslog.h>
 
 #include <FlowTable.h>
+#include <DataPathUpdate.h>
 
 #ifdef FREEBSD
 #include <sys/socket.h>
@@ -37,7 +38,7 @@
 
 namespace distdpi {
 
-static counter = 0;
+static int counter = 0;
 static int newc = 0;
 std::mutex m_mutex;
 std::condition_variable m_cv;
@@ -59,44 +60,44 @@ get_state_string(navl_state_t state)
     }
 }
 
-FlowTable::unorderedmap::iterator FlowTable::findOrDeleteTableEntry(ConnKey *key, bool delete_flag) {
+void FlowTable::cleanupFlows(bool final_delete) {
     std::lock_guard<std::mutex> lk(ftbl_mutex);
     FlowTable::unorderedmap::iterator it;
 
     int inspec = 0;
-    if (!delete_flag) {
-/*
-        it = this->conn_table.find(*key);
-        if (it == conn_table.end()) {
-            std::cout << "New connection key src " << key->srcaddr << " key dst " << key->dstaddr << std::endl; 
-            std::pair<FlowTable::unorderedmap::iterator,bool> ret;
-            ret = this->conn_table.insert(std::make_pair(*key, FlowTable::ConnInfo(key)));
-            it = ret.first;
-            it->second.packetnum = 0;
+    if (final_delete) {
+        auto it = conn_table.begin();
+        while (it != conn_table.end()) {
+            navl_conn_destroy(it->second.handle, it->second.dpi_state);
+            it = conn_table.erase(it);
         }
-        return it;
-*/
     }
     else {
-        //syslog(LOG_INFO, "Before delete Conn table size %d classified flows till now %d ", conn_table.size(), counter);
+        //syslog(LOG_INFO, "Conn table size %d classified flows till now %d ", conn_table.size(), counter);
         int current_time = time(0);
-        for (auto it = this->conn_table.begin(); it != this->conn_table.end(); ++it) {
-            if((it->second.pkt_ref_cnt == 0 &&
-               (it->second.class_state == NAVL_STATE_CLASSIFIED || it->second.class_state == NAVL_STATE_TERMINATED)) ||
-               difftime(current_time, it->second.lastpacket_timestamp) > 30 ||
-               difftime(current_time, it->second.classified_timestamp) > 30) {
-                //conn_table.erase(it);    
+        auto it = conn_table.begin();
+        while (it != conn_table.end()) {
+            if (it->second.pkt_ref_cnt == 0 &&
+               (it->second.class_state == NAVL_STATE_CLASSIFIED || it->second.class_state == NAVL_STATE_TERMINATED)) {
+                it = conn_table.erase(it);    
             }
-            if (it->second.class_state == NAVL_STATE_INSPECTING)
+            else if (/*it->second.pkt_ref_cnt == 0 &&*/
+                it->second.class_state == NAVL_STATE_INSPECTING &&
+                difftime(current_time, it->second.lastpacket_timestamp) > 10) {
                 inspec++;
+                navl_conn_destroy(it->second.handle, it->second.dpi_state);
+                it = conn_table.erase(it);
+            }
+            else {
+                it++;
+            }
         }
         //syslog(LOG_INFO, " Conn In Inspecting stage %d", inspec);
     }
-    return it;
 }
 
 void
-FlowTable::InsertOrUpdateFlows(ConnKey *key, std::string pkt_string, void *filter) {
+FlowTable::InsertOrUpdateFlows(ConnKey *key, std::string pkt_string, void *filter, uint8_t dir) {
     std::lock_guard<std::mutex> lk(ftbl_mutex);
     ConnMetadata mdata;
     int hash;
@@ -114,6 +115,8 @@ FlowTable::InsertOrUpdateFlows(ConnKey *key, std::string pkt_string, void *filte
         }
         it = ret.first;
         it->second.packetnum = 0;
+        it->second.filter = filter;
+        it->second.dir = dir;
         key1 = &it->first;
         info = &it->second;
         newc++;
@@ -171,42 +174,58 @@ int FlowTable::updateFlowTableDPIData(ConnInfo *info,
     auto it = conn_table.find(info->key);
     if (it != conn_table.end()) {
         ConnInfo *conninfo = &it->second;
+        ConnKey *key = &it->first;
+        
         if (conninfo->class_state == NAVL_STATE_INSPECTING)
             conninfo->pkt_ref_cnt = 0;
         else
             conninfo->pkt_ref_cnt--;
+
         conninfo->error = error;
         conninfo->handle = handle;
         conninfo->class_state = state;
         conninfo->dpi_result = navl_app_get(handle, result, &conninfo->dpi_confidence);
+
         if (conninfo->class_state == NAVL_STATE_CLASSIFIED ||
             conninfo->class_state == NAVL_STATE_TERMINATED) {
+        
+            DataPathUpdate::DPIFlowData data;
             navl_conn_destroy(it->second.handle, it->second.dpi_state);
             counter++;
-            std::string dpi_data;
             conninfo->classified_timestamp = time(0);
             if (conninfo->dpi_result) {
                 navl_proto_get_name(handle, conninfo->dpi_result, name, sizeof(name));
-                dpi_data.assign(name, strlen(name));
+                data.dpiresult.assign(name, strlen(name));
+                data.len = strlen(name);
             }
             else {
-                dpi_data = "UNKNOWN";
+                data.dpiresult = "UNKNOWN";
+                data.len = strlen("UNKNOWN");
             }
-            ConnKey key;
-            memcpy(&key, &(conninfo->key), sizeof(key));
+            data.srcaddr = key->srcaddr;
+            data.dstaddr = key->dstaddr;
+            data.srcport = key->srcport;
+            data.dstport = key->dstport;
+            data.ipproto = key->ipproto;
+            data.dir = conninfo->dir;
+            data.filter = conninfo->filter;
+            data.exit_flag = 0;
+            
+            dpUpdate_->updateDPQueue_->push(data);
             //InsertIntoClassifiedTbl(&key, dpi_data);
             ret = -1;
         }
-
+/*
         printf("    Classification: %s %s after %u packets %u%% confidence\n", conninfo->dpi_result ? navl_proto_get_name(handle, conninfo->dpi_result, name, sizeof(name)) : "UNKNOWN"
             , get_state_string(conninfo->class_state)
             , conninfo->classified_num
             , conninfo->dpi_confidence);
-  
+*/
     }
     return ret;
 }
 
+/*
 void FlowTable::InsertIntoClassifiedTbl(ConnKey *key, std::string &dpi_data) {
     auto it = classified_table.find(*key);
     if (it == classified_table.end())
@@ -217,23 +236,25 @@ void FlowTable::InsertIntoClassifiedTbl(ConnKey *key, std::string &dpi_data) {
             std::cout << "flow insert failed " << std::endl;
             return;
         }
-        //notify_ = true;
-        //datapathUpdatecv_.notify_one();
+        notify_ = true;
+        datapathUpdatecv_.notify_one();
     }
     else {
     }
 }
-
+*/
 void FlowTable::DatapathUpdate() {
     for (;;) {
-        {
-            std::unique_lock<std::mutex> lk(datapathUpdateMutex_);
-            while(!notify_)
-                //datapathUpdatecv_.wait(lock);
-            if (!running_)
-                break;
-            notify = false;
+/*
+        std::unique_lock<std::mutex> lk(datapathUpdateMutex_);
+        while(!notify_)
+            datapathUpdatecv_.wait(lock);
+        if (!running_)
+            break;
+        for (auto it = classified_table.begin(); it != classified_table.end(); ++it) {
         }
+        notify = false;
+*/
     }
 }
 
@@ -247,7 +268,7 @@ void FlowTable::FlowTableCleanup() {
                 break;
         }
         if (conn_table.size() > 0)    
-            findOrDeleteTableEntry(NULL, true);
+            cleanupFlows(false);
         //std::cout << "Conn table size " << conn_table.size() << " Classified table size " << classified_table.size() << std::endl;
     }
     std::cout << "Flow Table cleanup exiting " << std::endl;
@@ -267,14 +288,19 @@ void FlowTable::stop () {
     }
     flowCleanupThread_.join();
     ConnMetadata m;
+    DataPathUpdate::DPIFlowData data;
+    data.exit_flag = 1;
     m.exit_flag = 1;
+    cleanupFlows(true);
+    dpUpdate_->updateDPQueue_->push(data);
     for (int i = 0; i < numQueues_; i++)
         ftbl_queue_list_[i]->push(m);
     std::cout << "Flow Table stop called " << std::endl;
 }
 
-FlowTable::FlowTable(int numOfQueues):
-    numQueues_(numOfQueues) {
+FlowTable::FlowTable(std::shared_ptr<DataPathUpdate> dp_update,
+                     int numOfQueues):
+   numQueues_(numOfQueues), dpUpdate_(dp_update) {
     for (int i = 0; i < numOfQueues; i++)
         ftbl_queue_list_.push_back(std::unique_ptr<Queue<ConnMetadata>>(new Queue<ConnMetadata>()));
 }

@@ -5,6 +5,7 @@
 #include "FlowTable.h"
 #include "PacketHandler.h"
 #include "DPIEngine.h"
+#include "DataPathUpdate.h"
 
 #include <memory>
 
@@ -21,6 +22,7 @@ private:
     std::vector<int> signals;
     std::unique_ptr<DPIEngine> dpi_engine_;
     std::shared_ptr<FlowTable> ftb;
+    std::shared_ptr<DataPathUpdate> dp_update_;
     std::unique_ptr<PacketHandler> pkt_hdl_;
     std::vector<std::thread> th;
 

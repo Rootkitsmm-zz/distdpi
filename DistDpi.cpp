@@ -25,9 +25,11 @@ void DistDpi::stop() {
     pkt_hdl_->stop();
     ftb->stop();
     dpi_engine_->stop();
+    dp_update_->stop();    
     th[0].join();
     th[1].join();
     th[2].join();
+    th[3].join();
     std::unique_lock<std::mutex> lk(mutex_);
     running_ = true;
     notify = true;
@@ -44,19 +46,15 @@ void DistDpi::start() {
     signals.push_back(SIGINT);
     this->install(this, signals);
    
-    //std::shared_ptr<FlowTable> ftb = std::make_shared<FlowTable> (dpi_instances);
-    //PacketHandler pkthdl("serviceinstance-2", ftb);
-    //DPIEngine dpi(ftb, dpi_instances);
-    ftb = std::make_shared<FlowTable> (dpi_instances);
+    dp_update_ = std::make_shared<DataPathUpdate> ();
+    ftb = std::make_shared<FlowTable> (dp_update_, dpi_instances);
     pkt_hdl_ = std::unique_ptr<PacketHandler>(new PacketHandler("serviceinstance-2", ftb));
     dpi_engine_ = std::unique_ptr<DPIEngine>(new DPIEngine(ftb, dpi_instances));
-    
-    //std::vector<std::thread> th;
-    //th.push_back(std::thread(&PacketHandler::start, &pkthdl));
-    //th.push_back(std::thread(&DPIEngine::start, &dpi));
+  
     th.push_back(std::thread(&PacketHandler::start, pkt_hdl_.get()));
     th.push_back(std::thread(&DPIEngine::start, dpi_engine_.get()));
     th.push_back(std::thread(&FlowTable::start, ftb));
+    th.push_back(std::thread(&DataPathUpdate::start, dp_update_));
 
     while(!running_) {
         std::unique_lock<std::mutex> lk(mutex_);
