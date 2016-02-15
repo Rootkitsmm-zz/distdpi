@@ -1,6 +1,5 @@
 #include <string.h>
 #include <getopt.h>
-#include <thread>
 #include <iostream>
 #include <syslog.h>
 #include <vector>
@@ -47,13 +46,13 @@ void DistDpi::start() {
     this->install(this, signals);
    
     dp_update_ = std::make_shared<DataPathUpdate> ();
-    ftb = std::make_shared<FlowTable> (dp_update_, dpi_instances);
+    ftb = std::make_shared<FlowTable> (dpi_instances, dp_update_);
+    dpi_engine_ = std::make_shared<DPIEngine> (ftb, dpi_instances);
     pkt_hdl_ = std::unique_ptr<PacketHandler>(new PacketHandler("serviceinstance-2", ftb));
-    dpi_engine_ = std::unique_ptr<DPIEngine>(new DPIEngine(ftb, dpi_instances));
   
     th.push_back(std::thread(&PacketHandler::start, pkt_hdl_.get()));
     th.push_back(std::thread(&DPIEngine::start, dpi_engine_.get()));
-    th.push_back(std::thread(&FlowTable::start, ftb));
+    th.push_back(std::thread(std::bind(&FlowTable::start, ftb, dpi_engine_)));
     th.push_back(std::thread(&DataPathUpdate::start, dp_update_));
 
     while(!running_) {

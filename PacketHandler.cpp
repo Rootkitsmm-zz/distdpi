@@ -51,7 +51,6 @@ namespace distdpi {
 
 PacketHandler::PacketHandler(std::string AgentName,
                              std::shared_ptr<FlowTable> ftbl):
-    Timer(5.0),
     ftbl_(ftbl),
     queue_(500000),
     AgentName_(AgentName) {
@@ -64,31 +63,25 @@ void PacketHandler::PktRateMeasurer() {
         if (!running_)
             break;
         if (pktcounter == 0) {
-            syslog(LOG_INFO, "Packets/Second %d", (pkts - pktcounter) / 5);
+            syslog(LOG_INFO, "Packets/Second %ld", (pkts - pktcounter) / 5);
             pktcounter = pkts;
         }
         else {
-            syslog(LOG_INFO, "Packets/Second %d", (pkts - pktcounter) / 5);
+            syslog(LOG_INFO, "Packets/Second %ld", (pkts - pktcounter) / 5);
             pktcounter = pkts;
         }
     }
 }
 
-//void PacketHandler::PacketProducer(uint8_t *pkt, uint32_t len) {
-void PacketHandler::PacketProducer(PktMetadata *pktmdata, uint32_t len) {
-    //std::string packet;
+void PacketHandler::PacketProducer(PktMetadata *pktmdata,
+                                   uint32_t len) {
     PktMdata mdata;
 
     pkts++;
-    //if (pkt == '\0' || pkt == NULL)
-    //    return;
-    //std::lock_guard<std::mutex> lock(m_mutex);
-    //packet.assign((char*)pkt, len);
     mdata.dir = pktmdata->dir;
     mdata.filter = pktmdata->filterPtr;
     mdata.pkt.assign((char*)pktmdata->pktPtr, len);
     
-    //while(!queue_.write(packet)) {
     while(!queue_.write(mdata)) {
         continue;
     }
@@ -96,41 +89,36 @@ void PacketHandler::PacketProducer(PktMetadata *pktmdata, uint32_t len) {
     m_cv.notify_one();
 }
 
-//void PacketHandler::StaticPacketProducer(void *obj, uint8_t *pkt, uint32_t len) {
-void PacketHandler::StaticPacketProducer(void *obj, PktMetadata *pktmdata, uint32_t len) {
-    //((PacketHandler *)obj)->PacketProducer(pkt, len);
+void PacketHandler::StaticPacketProducer(void *obj,
+                                         PktMetadata *pktmdata,
+                                         uint32_t len) {
     ((PacketHandler *)obj)->PacketProducer(pktmdata, len);
 }
 
 void PacketHandler::PacketConsumer() {
-    for (;;) {
-        //std::string pkt;
-        PktMdata mdata;        
-        std::unique_lock<std::mutex> lock(m_mutex);
+    try {
+        for (;;) {
+            PktMdata mdata;        
+            std::unique_lock<std::mutex> lock(m_mutex);
 
-        while(!notify)
-            m_cv.wait(lock);
-        if (!running_)
-            break;
+            while(!notify)
+                m_cv.wait(lock);
+            if (!running_)
+                break;
         
-        //while(!queue_.read(pkt)) {
-        //    continue;
-        //}
-        while(!queue_.isEmpty()) {
-            //queue_.read(pkt);
-            queue_.read(mdata);
-            this->classifyFlows(&mdata);
+            while(!queue_.isEmpty()) {
+                queue_.read(mdata);
+                this->classifyFlows(&mdata);
+            }
+            notify = false;
         }
-        notify = false;
-        //this->classifyFlows(pkt);
-    } 
+    } catch (const std::exception& ex) {
+        stop();
+    }
     std::cout << "Exiting packet consumer thread " << std::endl;
 }
 
 void PacketHandler::classifyFlows(PktMdata *mdata) {
-//void PacketHandler::classifyFlows(std::string &packet) {
-//void PacketHandler::classifyFlows(std::vector<std::string> &pktlist) {
-    //for (unsigned int i = 0; i < pktlist.size(); i++) {
 #ifdef FREEBSD
     typedef struct ip iphdr;
 #endif
@@ -138,7 +126,7 @@ void PacketHandler::classifyFlows(PktMdata *mdata) {
     u_int len = mdata->pkt.size();
     const u_short *eth_type;
     const iphdr *iph;
-    FlowTable::ConnKey key;
+    ConnKey key;
 
     // Read the first ether type
     len -= 12;
@@ -192,10 +180,13 @@ void PacketHandler::classifyFlows(PktMdata *mdata) {
     ptr = reinterpret_cast<const u_char *>(iph) + (iph->ihl << 2);
 #endif
     populateFlowTable(ptr, len, &key, mdata->filter, mdata->dir); 
-    //}
 }
 
-void PacketHandler::populateFlowTable(const u_char *ptr,  u_int len, FlowTable::ConnKey *key, void *filter, uint8_t dir) {
+void PacketHandler::populateFlowTable(const u_char *ptr,
+                                      u_int len,
+                                      ConnKey *key,
+                                      void *filter,
+                                      uint8_t dir) {
     const tcphdr *th;
     const udphdr *uh;
 
@@ -229,7 +220,7 @@ void PacketHandler::populateFlowTable(const u_char *ptr,  u_int len, FlowTable::
         break;
     };
 
-    FlowTable::ConnMetadata connmdata;
+    ConnMetadata connmdata;
     std::string pkt_string;
     pkt_string.append((char *)ptr, len);
 
@@ -237,14 +228,16 @@ void PacketHandler::populateFlowTable(const u_char *ptr,  u_int len, FlowTable::
 }
 
 void PacketHandler::ConnectToPktProducer() {
-    start_netx_service(AgentName_.c_str(), PacketHandler::StaticPacketProducer, this);
+    start_netx_service(AgentName_.c_str(),
+                       PacketHandler::StaticPacketProducer,
+                       this);
 }
 
 void PacketHandler::start() {
     running_ = true;
     pkthdl_threads.push_back(std::thread(&PacketHandler::ConnectToPktProducer, this));
     pkthdl_threads.push_back(std::thread(&PacketHandler::PacketConsumer, this));
-    pkthdl_threads.push_back(std::thread(&PacketHandler::PktRateMeasurer, this));
+    //pkthdl_threads.push_back(std::thread(&PacketHandler::PktRateMeasurer, this));
 }
 
 void PacketHandler::stop() {
@@ -252,14 +245,12 @@ void PacketHandler::stop() {
     notify = true;
     m_cv.notify_one();
     stop_netx_service();
+
     for (unsigned int i = 0; i < pkthdl_threads.size(); i++) {
         pkthdl_threads[i].join();
     }
-    std::cout << " PacketHandler stop called " << std::endl;    
-}
 
-void PacketHandler::executeCb() {
-    std::cout << "Timer called " << std::endl;
+    std::cout << " PacketHandler stop called " << std::endl;    
 }
 
 PacketHandler::~PacketHandler() {

@@ -3,9 +3,10 @@
 
 #include "Queue.h"
 #include "Timer.h"
-#include "ProducerConsumerQueue.h"
 #include "DataPathUpdate.h"
 #include "navl.h"
+#include "DPIEngine.h"
+#include "ConnectionDS.h"
 
 #include <unordered_map>
 #include <list>
@@ -21,105 +22,15 @@
 
 namespace distdpi {
 
+class DPIEngine;
+
 class FlowTable {
+
   public:
-/*
-    template <typename T>
-    struct atomwrapper
-    {
-        std::atomic<T> _a;
-
-        atomwrapper()
-        :_a()
-        {}
-
-        atomwrapper(const std::atomic<T> &a)
-            :_a(a.load())
-            {}
-
-        atomwrapper(const atomwrapper &other)
-        :_a(other._a.load())
-        {}
-
-        atomwrapper &operator=(const atomwrapper &other)
-        {
-            _a.store(other._a.load());
-        }
-    };
-*/
-    struct ConnKey {
-        ConnKey()
-        : srcaddr(0),
-          dstaddr(0),
-          srcport(0),
-          dstport(0),
-          ipproto(0) {}
-
-        uint32_t srcaddr;
-        uint32_t dstaddr;
-        uint16_t srcport;
-        uint16_t dstport;
-        u_char  ipproto;
-    };
-
-    struct ConnInfo {
-        ConnInfo(ConnKey *key)
-        : key(*key),
-          queue(0),
-          connid(0),
-          packetnum(0),
-          classified_num(0),
-          class_state(NAVL_STATE_INSPECTING),
-          dpi_state(NULL), dpi_result(0),
-          dpi_confidence(0),
-          error(0), classified_timestamp(0),
-          handle(0), dir(0),
-          filter(NULL), pkt_ref_cnt(0)
-          {} 
-
-        ConnInfo(const ConnInfo& other)
-        : key(other.key),
-          queue(other.queue),
-          connid(other.connid),
-          packetnum(other.packetnum),
-          classified_num(other.classified_num),
-          class_state(other.class_state),
-          dpi_state(other.dpi_state), dpi_result(other.dpi_result),
-          dpi_confidence(other.dpi_confidence),
-          error(other.error), classified_timestamp(other.classified_timestamp),
-          handle(other.handle), dir(other.dir), 
-          filter(other.filter), pkt_ref_cnt(other.pkt_ref_cnt.load())
-          {}
-
-        ConnKey key;
-        int queue;
-        uint64_t connid;
-        uint32_t packetnum;
-        u_int   classified_num;
-        navl_state_t class_state;
-
-        void    *dpi_state;
-        u_int   dpi_result;
-        int     dpi_confidence;
-        int     error;
-        int     classified_timestamp;
-        int     lastpacket_timestamp;
-        int     handle;
-        int     dir;
-        void    *filter;
-        //atomwrapper<int> pkt_ref_cnt;
-        std::atomic<int> pkt_ref_cnt;
-    }; 
-
-    struct ConnMetadata {
-        ConnKey *key;
-        ConnInfo *info;
-        uint32_t pktnum;
-        uint32_t dir;
-        std::string data;
-        uint8_t exit_flag;
-    };
-
+    /**
+     * Hashing function for the unordered map used by
+     * Flow Table
+     */
     struct ConnKeyHasher {
         size_t operator()(const ConnKey &key) const {
             return std::hash<uint32_t>() (key.srcaddr +
@@ -130,6 +41,14 @@ class FlowTable {
         }
     };
 
+    /**
+     * Key comparator for the unordered map used by
+     * Flow Table
+     *
+     * Does a forward and reverse lookup of the 5 tuples
+     * in the packet to match the flow irrespective of
+     * direction
+     */
     struct ConnKeyEqual {
         bool forward_lookup(const ConnKey &k1, const ConnKey &k2) const {
             return
@@ -154,22 +73,46 @@ class FlowTable {
         }
     };
 
+    /**
+     * unordered_map with custom hashing and equal functions
+     * used by Flow Table.
+     */
     typedef std::unordered_map<ConnKey, ConnInfo, ConnKeyHasher, ConnKeyEqual> unorderedmap;
     std::unordered_map<ConnKey, ConnInfo, ConnKeyHasher, ConnKeyEqual> conn_table;
 
-    typedef std::unordered_map<ConnKey, std::string, ConnKeyHasher, ConnKeyEqual> classified_unordmap;
-    std::unordered_map<ConnKey, std::string, ConnKeyHasher, ConnKeyEqual> classified_table;
-
-    std::vector<std::unique_ptr<Queue<ConnMetadata>>> ftbl_queue_list_;
-    
-    FlowTable(std::shared_ptr<DataPathUpdate> dp_update,
-              int numOfQueues);
+    /* Create new FlowTable
+     * 
+     * Number of DPI Engine queues to send packets.
+     *
+     * Pointer to datapath update object to program
+     * classified flows in the datapath.
+     */
+    FlowTable(int numOfQueues,
+              std::shared_ptr<DataPathUpdate> dp_update);
     ~FlowTable();
 
-    void InsertOrUpdateFlows(ConnKey *key, std::string pkt_string, void *filter, uint8_t dir);
-
-    void InsertIntoClassifiedTbl(ConnKey *key, std::string &dpi_data);
-
+    /**
+     * Insert connection structures into the flow table
+     *
+     * Makes a pair of Key and Info to be inserted into the Flow Table.
+     *
+     * The Info field stores DPI metadata returned by the DPI Engine
+     * and also information such as, last received packet timestamp,
+     * classified timestamp, the number of packets in the pipeline to the
+     * DPI Engine.
+     */
+    void InsertOrUpdateFlows(ConnKey *key,
+                             std::string pkt_string,
+                             void *filter,
+                             uint8_t dir);
+    /**
+     * Update flow table entries with DPI result from DPI engine.
+     *
+     * If flows are in classified or terminated state destroy 
+     * corresponding flow entry in navl dpi library.
+     *
+     * If in inspecting state navl flow entry is not destroyed
+     */
     int updateFlowTableDPIData(ConnInfo *info, 
                                navl_handle_t handle, 
                                navl_result_t result, 
@@ -177,30 +120,86 @@ class FlowTable {
                                navl_conn_t nc, 
                                int error);
 
-    void start();
+    /**
+     * Start the Flow Table cleanup thread
+     */
+    void start(std::shared_ptr<DPIEngine> &dpiEngine);
+
+    /**
+     * Notifies the flow table cleanup thread to stop.
+     *
+     * Sends exit message to DPI engine queues.
+     *
+     * Sends exit message to Datapath Update queue.
+     */
     void stop();
+
+    /**
+     * decrement number of DPI engine queues
+     */
+    void decrementNumQueues () {
+        numQueues_--;
+    }
 
   private:
     /**
-     * Flow Table Cleanup Thread. Runs every 1000 milliseconds
+     * Flow Table Cleanup Thread. Runs every 100 milliseconds
      */ 
     void FlowTableCleanup();
-    void DatapathUpdate();
-    void cleanupFlows(bool final_delete);
-    std::mutex ftbl_mutex;
-    std::mutex update_mutex;
-    
-    std::mutex cleanupThreadMutex_;
-    std::mutex datapathUpdateMutex_;
-    int numQueues_;
-    bool running_;
-    bool notify_;
-    std::condition_variable cleanupThreadcv_;
-    std::condition_variable datapathUpdatecv_;
 
+    /**
+     * Flow Table cleanup function. 
+     *
+     * If final_delete is true, all flows are deleted.
+     *
+     * If final_delete is false two things happen
+     *   - Flows in classified state and have packet ref
+     *     count zero are deleted.
+     *   - Flows in inspection state and have not received
+     *     a packet since 10 secs are deleted.
+     */
+    void cleanupFlows(bool final_delete);
+
+    /**
+     * Mutex to lock the Flow Table
+     */
+    std::mutex ftbl_mutex;
+    
+    /**
+     * Mutex to lock till cleanup thread is woken up
+     */
+    std::mutex cleanupThreadMutex_;
+
+    /**
+     * conditional variable to wait for 100 milliseconds
+     * and wake to start Flow Table cleanup
+     */
+    std::condition_variable cleanupThreadcv_;
+
+    /**
+     * Number of DPI Engine queues
+     */
+    int numQueues_;
+
+    /**
+     * Set to false to stop the cleanup thread
+     */
+    bool running_;
+
+    /**
+     * flow cleanup thread
+     */
     std::thread flowCleanupThread_;
-    std::thread datapathUpdateThread_;
+
+    /**
+     * Pointer to datapath update object
+     */
     std::shared_ptr<DataPathUpdate> dpUpdate_;
+
+    /**
+     * Pointer to DPI engine object
+     */
+    std::shared_ptr<DPIEngine> dpiEngine_;
 };
 
 }

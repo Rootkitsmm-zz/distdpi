@@ -888,7 +888,7 @@ done:
  *
  ******************************************************************************
  */
-
+#if 0
 static void
 PrintPacketInfo(PktHandle *pkt, filterPktInfo *info, DVFilterDirection direction)
 {
@@ -945,6 +945,7 @@ PrintPacketInfo(PktHandle *pkt, filterPktInfo *info, DVFilterDirection direction
        DVFilter_GetPktMetadataLen(pkt),
        ethTypeStr, info->ethtype, protoStr, portStr);
 }
+#endif
 
 
 /******************************************************************************

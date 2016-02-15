@@ -1,6 +1,5 @@
 #include <string.h>
 #include <getopt.h>
-#include <thread>
 #include <iostream>
 #include <syslog.h>
 #include <vector>

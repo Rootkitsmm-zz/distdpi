@@ -12,18 +12,42 @@
 namespace distdpi {
 
 class DistDpi: public SignalHandler {
-public:
+  public:
 
     DistDpi();
     ~DistDpi();
 
     void start();
-private:
+  private:
+
+    /**
+     * List of signals to register for
+     */
     std::vector<int> signals;
-    std::unique_ptr<DPIEngine> dpi_engine_;
+
+    /**
+     * Pointer to DPI Engine object
+     */
+    std::shared_ptr<DPIEngine> dpi_engine_;
+
+    /**
+     * Pointer to Flow Table object
+     */
     std::shared_ptr<FlowTable> ftb;
+
+    /**
+     * Pointer to DPI Engine object
+     */
     std::shared_ptr<DataPathUpdate> dp_update_;
+
+    /**
+     * Pointer to DPI Engine object
+     */
     std::unique_ptr<PacketHandler> pkt_hdl_;
+
+    /**
+     * Pointer to DPI Engine object
+     */
     std::vector<std::thread> th;
 
     bool running_;
