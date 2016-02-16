@@ -65,16 +65,7 @@ void FlowTable::cleanupFlows(bool final_delete) {
                 it->second.class_state == NAVL_STATE_INSPECTING &&
                 difftime(current_time, it->second.lastpacket_timestamp) > 10) {
                 inspec++;
-                //int ret = navl_conn_destroy(it->second.handle, it->second.dpi_state);
-/*
-                int ret = dpiEngine_->cleanupFlow(it->second.handle, it->second.dpi_state);
-                if (ret != 0) {
-                    printf("\nReturn value of navl_conn_destroy %d handle %d pointer %p src port %d", ret, it->second.handle, it->second.dpi_state, it->first.srcport);
-                }
-                else if (ret == 0) {
-                    printf("\nReturn value of navl_conn_destroy %d handle %d pointer %p src port %d", ret, it->second.handle, it->second.dpi_state, it->first.srcport);
-                }
-*/
+                int ret = navl_conn_destroy(it->second.handle, it->second.dpi_state);
                 it = conn_table.erase(it);
             }
             else {

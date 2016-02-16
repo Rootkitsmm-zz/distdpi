@@ -24,7 +24,8 @@ void DataPathUpdate::GetDPIFlowData() {
         DPIFlowData data = updateDPQueue_->pop();
         if (data.exit_flag)
             break;
-        syslog(LOG_INFO, "DPI result %s", data.dpiresult.c_str());
+        //syslog(LOG_INFO, "DPI result %s", data.dpiresult.c_str());
+        //printf("\n DPI result %s", data.dpiresult.c_str());
     }
 }
 

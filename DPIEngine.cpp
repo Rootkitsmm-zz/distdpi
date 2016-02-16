@@ -64,9 +64,10 @@ void DPIEngine::Dequeue(int queue) {
     if (navl_init(g_navlhandle_) == -1)
         fprintf(stderr, "navl_init failed\n");
 
+    navl_config_set(g_navlhandle_, "tcp.timeout", "10");
     navl_config_set(g_navlhandle_, "tcp.track_user_conns", "1");
     //navl_config_set(g_navlhandle_, "udp.track_user_conns", "1");
-    navl_config_set(g_navlhandle_, "tcp.timeout", "10");
+    //navl_config_set(g_navlhandle_, "tcp.timeout", "10");
 
     try {
         for (;;) {
